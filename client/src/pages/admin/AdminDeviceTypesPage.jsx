@@ -1,0 +1,157 @@
+import { useState } from 'react';
+import { Table, Button, Typography, Space, Modal, Form, Input, Select, message, Tag } from 'antd';
+import { EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
+import { adminApi } from '../../api/adminApi';
+
+const { Title } = Typography;
+const { Option } = Select;
+
+export default function AdminDeviceTypesPage() {
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [loadingAction, setLoadingAction] = useState(false);
+  const [form] = Form.useForm();
+
+  const { data: deviceData, isLoading, refetch } = useQuery({
+    queryKey: ['admin-device-types'],
+    queryFn: adminApi.getDeviceTypes,
+  });
+
+  const { data: catData } = useQuery({
+    queryKey: ['admin-categories'],
+    queryFn: adminApi.getCategories,
+  });
+
+  const deviceTypes = deviceData?.data || [];
+  const categories = catData?.data || [];
+
+  const handleOpenModal = (deviceType = null) => {
+    if (deviceType) {
+      setEditingId(deviceType.id);
+      form.setFieldsValue({
+        ...deviceType,
+        category_id: deviceType.category_id || deviceType.category?.id,
+      });
+    } else {
+      setEditingId(null);
+      form.resetFields();
+    }
+    setIsModalVisible(true);
+  };
+
+  const handleSave = async (values) => {
+    try {
+      setLoadingAction(true);
+      if (editingId) {
+        await adminApi.updateDeviceType(editingId, values);
+        message.success('Cập nhật loại thiết bị thành công');
+      } else {
+        await adminApi.createDeviceType(values);
+        message.success('Thêm loại thiết bị thành công');
+      }
+      setIsModalVisible(false);
+      refetch();
+    } catch (err) {
+      message.error(err.message || 'Lỗi khi lưu loại thiết bị');
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  const handleDelete = (id) => {
+    Modal.confirm({
+      title: 'Xóa loại thiết bị?',
+      content: 'Bạn có chắc chắn muốn xóa loại thiết bị này?',
+      onOk: async () => {
+        try {
+          await adminApi.deleteDeviceType(id);
+          message.success('Đã xóa loại thiết bị');
+          refetch();
+        } catch (err) {
+          message.error(err.message || 'Lỗi khi xóa');
+        }
+      }
+    });
+  };
+
+  const columns = [
+    {
+      title: 'Thuộc danh mục',
+      dataIndex: ['category', 'name'],
+      key: 'category',
+      render: (text) => text ? <Tag color="blue">{text}</Tag> : <Tag color="default">Chung</Tag>,
+      width: 160,
+    },
+    {
+      title: 'Tên loại thiết bị',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text) => <span style={{ fontWeight: 500 }}>{text}</span>,
+    },
+    {
+      title: 'Mô tả',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+    },
+    {
+      title: 'Hành động',
+      key: 'action',
+      render: (_, record) => (
+        <Space>
+          <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} />
+          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+        </Space>
+      ),
+      width: 120,
+    },
+  ];
+
+  return (
+    <div>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <Title level={2} style={{ color: 'var(--navy)', marginBottom: 8 }}>Loại thiết bị</Title>
+          <p>Quản lý các loại thiết bị hỗ trợ sửa chữa (Máy lạnh, Bồn cầu,...)</p>
+        </div>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>Thêm loại thiết bị</Button>
+      </div>
+
+      <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
+        <Table 
+          columns={columns} 
+          dataSource={deviceTypes} 
+          rowKey="id"
+          loading={isLoading}
+        />
+      </div>
+
+      <Modal
+        title={editingId ? "Sửa loại thiết bị" : "Thêm loại thiết bị mới"}
+        open={isModalVisible}
+        onCancel={() => setIsModalVisible(false)}
+        footer={null}
+      >
+        <Form form={form} layout="vertical" onFinish={handleSave}>
+          <Form.Item name="category_id" label="Thuộc danh mục dịch vụ">
+            <Select placeholder="Chọn danh mục" allowClear>
+              {categories.map(c => <Option key={c.id} value={c.id}>{c.name}</Option>)}
+            </Select>
+          </Form.Item>
+          <Form.Item name="name" label="Tên loại thiết bị" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="description" label="Mô tả">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={loadingAction} block>
+              Lưu lại
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+}
