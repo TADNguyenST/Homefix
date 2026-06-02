@@ -1,0 +1,26 @@
+{
+  "name": "homefix-server",
+  "version": "0.1.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@prisma/client": "latest",
+    "bcrypt": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "helmet": "latest",
+    "jsonwebtoken": "latest",
+    "morgan": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "nodemon": "latest",
+    "prisma": "latest"
+  }
+}
+
