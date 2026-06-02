@@ -1,0 +1,307 @@
+import { useState } from 'react';
+import { Button, Descriptions, Drawer, Form, Modal, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, RobotOutlined, UserSwitchOutlined } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
+import { adminApi } from '../../api/adminApi';
+import { formatDate, formatVND } from '../../utils/helpers';
+import { BOOKING_STATUS_COLORS, BOOKING_STATUS_LABELS } from '../../utils/constants';
+
+const { Title, Text } = Typography;
+const { Option } = Select;
+
+export default function AdminBookingsPage() {
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [selectedTechId, setSelectedTechId] = useState(null);
+  const [loadingAction, setLoadingAction] = useState(false);
+  const [recommendedTechs, setRecommendedTechs] = useState([]);
+
+  const { data: bookingsData, isLoading, refetch } = useQuery({
+    queryKey: ['admin-bookings'],
+    queryFn: () => adminApi.getBookings(),
+  });
+
+  const { data: techsData } = useQuery({
+    queryKey: ['admin-technicians'],
+    queryFn: () => adminApi.getTechnicians(),
+  });
+
+  const { data: detailData, isLoading: detailLoading } = useQuery({
+    queryKey: ['admin-booking-detail', selectedBooking?.id],
+    queryFn: () => adminApi.getBookingById(selectedBooking.id),
+    enabled: !!selectedBooking?.id && detailOpen,
+  });
+
+  const bookings = bookingsData?.data || [];
+  const technicians = techsData?.data || [];
+  const bookingDetail = detailData?.data || selectedBooking;
+
+  const openAssign = (booking) => {
+    setSelectedBooking(booking);
+    setSelectedTechId(booking.technician_profile_id || null);
+    setRecommendedTechs([]);
+    setAssignModalOpen(true);
+  };
+
+  const openDetail = (booking) => {
+    setSelectedBooking(booking);
+    setDetailOpen(true);
+  };
+
+  const confirmBooking = (booking) => {
+    Modal.confirm({
+      title: `Xác nhận đơn #${booking.id}?`,
+      content: 'Sau khi xác nhận, đơn sẽ chuyển sang trạng thái chờ phân công kỹ thuật viên.',
+      okText: 'Xác nhận',
+      cancelText: 'Đóng',
+      onOk: async () => {
+        await adminApi.confirmBooking(booking.id);
+        message.success('Đã xác nhận đơn hàng');
+        refetch();
+      },
+    });
+  };
+
+  const assignTech = async () => {
+    if (!selectedTechId) {
+      message.warning('Vui lòng chọn kỹ thuật viên');
+      return;
+    }
+
+    try {
+      setLoadingAction(true);
+      const payload = { technician_profile_id: selectedTechId };
+      if (selectedBooking.technician_profile_id) {
+        await adminApi.reassignTech(selectedBooking.id, payload);
+        message.success('Đã chuyển kỹ thuật viên thành công');
+      } else {
+        await adminApi.assignTech(selectedBooking.id, payload);
+        message.success('Đã phân công kỹ thuật viên thành công');
+      }
+      setAssignModalOpen(false);
+      refetch();
+    } catch (err) {
+      message.error(err.message || 'Lỗi khi phân công');
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  const recommendTech = async () => {
+    try {
+      setLoadingAction(true);
+      const res = await adminApi.recommendTech(selectedBooking.id);
+      const suggestions = res.data?.data?.technicians || res.data?.data || [];
+      setRecommendedTechs(suggestions);
+      if (suggestions[0]?.id) {
+        setSelectedTechId(suggestions[0].id);
+      }
+      message.success('Đã tải gợi ý kỹ thuật viên phù hợp');
+    } catch (err) {
+      message.error(err.message || 'Không thể lấy gợi ý AI');
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  const cancelBooking = (booking) => {
+    Modal.confirm({
+      title: `Hủy đơn #${booking.id}?`,
+      content: 'Chỉ hủy các đơn chưa hoàn tất. Nếu có voucher, hệ thống sẽ hoàn lượt sử dụng.',
+      okText: 'Hủy đơn',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await adminApi.cancelBooking(booking.id, { reason: 'Admin hủy đơn' });
+        message.success('Đã hủy đơn hàng');
+        refetch();
+      },
+    });
+  };
+
+  const columns = [
+    {
+      title: 'Mã đơn',
+      dataIndex: 'id',
+      key: 'id',
+      render: (id) => <span style={{ fontWeight: 700 }}>#{id}</span>,
+    },
+    {
+      title: 'Dịch vụ',
+      dataIndex: ['service', 'name'],
+      key: 'service',
+      render: (text) => <span style={{ fontWeight: 600, color: 'var(--navy)' }}>{text}</span>,
+    },
+    {
+      title: 'Khách hàng',
+      key: 'customer',
+      render: (_, record) => record.customer?.full_name || 'N/A',
+    },
+    {
+      title: 'Kỹ thuật viên',
+      key: 'technician',
+      render: (_, record) => record.technicianProfile
+        ? record.technicianProfile.user?.full_name
+        : <Text type="danger">Chưa phân công</Text>,
+    },
+    {
+      title: 'Ngày hẹn',
+      key: 'booking_date',
+      render: (_, record) => `${formatDate(record.booking_date)} ${record.time_slot_start || ''}`,
+    },
+    {
+      title: 'Trạng thái',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status) => {
+        const colorCfg = BOOKING_STATUS_COLORS[status] || {};
+        return (
+          <Tag color={colorCfg.bg} style={{ color: colorCfg.color, border: 'none', fontWeight: 600 }}>
+            {BOOKING_STATUS_LABELS[status] || status}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: 'Hành động',
+      key: 'action',
+      render: (_, record) => (
+        <Space wrap>
+          <Button size="small" icon={<EyeOutlined />} onClick={() => openDetail(record)}>Chi tiết</Button>
+          {record.status === 'PENDING' && (
+            <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => confirmBooking(record)}>
+              Xác nhận
+            </Button>
+          )}
+          {record.status === 'CONFIRMED' && !record.technicianProfile && (
+            <Button size="small" type="primary" icon={<UserSwitchOutlined />} onClick={() => openAssign(record)}>
+              Phân công
+            </Button>
+          )}
+          {record.status === 'ASSIGNED' && record.technicianProfile && (
+            <Button size="small" type="primary" icon={<UserSwitchOutlined />} onClick={() => openAssign(record)}>
+              Chuyển thợ
+            </Button>
+          )}
+          {!['COMPLETED', 'CANCELLED'].includes(record.status) && (
+            <Button size="small" danger icon={<CloseCircleOutlined />} onClick={() => cancelBooking(record)}>Hủy</Button>
+          )}
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <div className="page-header">
+        <Title level={2} style={{ color: 'var(--navy)', marginBottom: 8 }}>Quản lý đơn đặt lịch</Title>
+        <p>Theo dõi và điều phối công việc cho kỹ thuật viên</p>
+      </div>
+
+      <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
+        <Table
+          columns={columns}
+          dataSource={bookings}
+          rowKey="id"
+          loading={isLoading}
+          pagination={{ pageSize: 15 }}
+          scroll={{ x: 1100 }}
+        />
+      </div>
+
+      <Modal
+        title={selectedBooking?.technician_profile_id ? 'Chuyển kỹ thuật viên' : 'Phân công kỹ thuật viên'}
+        open={assignModalOpen}
+        onCancel={() => setAssignModalOpen(false)}
+        onOk={assignTech}
+        confirmLoading={loadingAction}
+        okText="Xác nhận"
+        cancelText="Đóng"
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Button icon={<RobotOutlined />} onClick={recommendTech} loading={loadingAction}>
+            Gợi ý kỹ thuật viên bằng AI
+          </Button>
+          {recommendedTechs.length > 0 && (
+            <div>
+              <Text strong>Gợi ý phù hợp:</Text>
+              <ul style={{ marginTop: 8 }}>
+                {recommendedTechs.slice(0, 5).map((tech) => (
+                  <li key={tech.id}>{tech.user?.full_name || tech.full_name || `Kỹ thuật viên #${tech.id}`}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <Select
+            style={{ width: '100%' }}
+            placeholder="Chọn kỹ thuật viên"
+            value={selectedTechId}
+            onChange={setSelectedTechId}
+            showSearch
+            optionFilterProp="children"
+          >
+            {technicians.map((tech) => (
+              <Option key={tech.id} value={tech.id}>
+                {tech.user?.full_name} - {tech.district?.name || 'Chưa có khu vực'} - {Number(tech.avg_rating || 0).toFixed(1)} sao
+              </Option>
+            ))}
+          </Select>
+        </Space>
+      </Modal>
+
+      <Drawer
+        title={`Chi tiết đơn #${bookingDetail?.id || ''}`}
+        open={detailOpen}
+        width={720}
+        onClose={() => setDetailOpen(false)}
+        loading={detailLoading}
+      >
+        {bookingDetail && (
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Descriptions column={1} bordered>
+              <Descriptions.Item label="Khách hàng">{bookingDetail.customer?.full_name}</Descriptions.Item>
+              <Descriptions.Item label="Số điện thoại">{bookingDetail.customer?.phone || 'N/A'}</Descriptions.Item>
+              <Descriptions.Item label="Dịch vụ">{bookingDetail.service?.name}</Descriptions.Item>
+              <Descriptions.Item label="Địa chỉ">
+                {bookingDetail.address_detail}, {bookingDetail.ward?.name}, {bookingDetail.district?.name}
+              </Descriptions.Item>
+              <Descriptions.Item label="Lịch hẹn">
+                {formatDate(bookingDetail.booking_date)} {bookingDetail.time_slot_start} - {bookingDetail.time_slot_end}
+              </Descriptions.Item>
+              <Descriptions.Item label="Kỹ thuật viên">
+                {bookingDetail.technicianProfile?.user?.full_name || 'Chưa phân công'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Giá dự kiến">{formatVND(bookingDetail.estimated_price)}</Descriptions.Item>
+              <Descriptions.Item label="Giá cuối">{formatVND(bookingDetail.final_price || bookingDetail.payment?.amount)}</Descriptions.Item>
+              <Descriptions.Item label="Thanh toán">
+                {bookingDetail.payment_method} - {bookingDetail.payment?.status || 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Mô tả">{bookingDetail.description}</Descriptions.Item>
+            </Descriptions>
+
+            <Form layout="inline">
+              {bookingDetail.status === 'PENDING' && (
+                <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => confirmBooking(bookingDetail)}>
+                  Xác nhận
+                </Button>
+              )}
+              {bookingDetail.status === 'CONFIRMED' && !bookingDetail.technicianProfile && (
+                <Button type="primary" icon={<UserSwitchOutlined />} onClick={() => openAssign(bookingDetail)}>
+                  Phân công
+                </Button>
+              )}
+              {bookingDetail.status === 'ASSIGNED' && bookingDetail.technicianProfile && (
+                <Button type="primary" icon={<UserSwitchOutlined />} onClick={() => openAssign(bookingDetail)}>
+                  Chuyển thợ
+                </Button>
+              )}
+              {!['COMPLETED', 'CANCELLED'].includes(bookingDetail.status) && (
+                <Button danger icon={<CloseCircleOutlined />} onClick={() => cancelBooking(bookingDetail)}>Hủy đơn</Button>
+              )}
+            </Form>
+          </Space>
+        )}
+      </Drawer>
+    </div>
+  );
+}
