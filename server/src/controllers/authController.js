@@ -26,6 +26,17 @@ const register = async (req, res) => {
       return error(res, 'Email đã được đăng ký', 409);
     }
 
+    // Kiểm tra số điện thoại đã tồn tại
+    if (phone) {
+      const existingPhone = await prisma.user.findFirst({ where: { phone } });
+      if (existingPhone) {
+        if (!existingPhone.is_active) {
+          return error(res, 'Số điện thoại đã được liên kết với một tài khoản chưa xác thực.', 409);
+        }
+        return error(res, 'Số điện thoại đã được đăng ký', 409);
+      }
+    }
+
     // Hash password
     const password_hash = await bcrypt.hash(password, BUSINESS_RULES.SALT_ROUNDS);
 
@@ -213,6 +224,7 @@ const login = async (req, res) => {
         email: user.email,
         full_name: user.full_name,
         role: user.role,
+        phone: user.phone,
         avatar_url: user.avatar_url,
       },
     }, 'Đăng nhập thành công');

@@ -24,7 +24,7 @@ export default function LoginPage() {
       if (from === '/') {
         if (user.role === 'ADMIN') navigate('/admin');
         else if (user.role === 'TECHNICIAN') navigate('/technician');
-        else navigate('/customer');
+        else navigate('/');
       } else {
         navigate(`${from}${fromLocation?.search || ''}`, {
           replace: true,
