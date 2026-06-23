@@ -10,6 +10,16 @@ export const bookingApi = {
   validateVoucher: (data) => axiosClient.post('/bookings/validate-voucher', data),
 };
 
+export const uploadApi = {
+  image: (file) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    return axiosClient.post('/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
 export const quotationApi = {
   getById: (id) => axiosClient.get(`/quotations/${id}`),
   getByBooking: (bookingId) => axiosClient.get(`/quotations/booking/${bookingId}`),

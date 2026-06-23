@@ -40,6 +40,8 @@ const createBooking = async (req, res) => {
       time_slot_end,
       payment_method,
       voucher_code,
+      ai_diagnosis,
+      image_urls = [],
     } = req.body;
 
     // 1. Validate service tồn tại và đang active
@@ -48,17 +50,38 @@ const createBooking = async (req, res) => {
       return error(res, 'Dịch vụ không tồn tại hoặc đã ngừng cung cấp', 400);
     }
 
+    let resolvedDistrictId = district_id;
+    let resolvedWardId = ward_id;
+    let resolvedAddressDetail = address_detail;
+
+    if (customer_address_id) {
+      const savedAddress = await prisma.customerAddress.findFirst({
+        where: { id: customer_address_id, customer_id: req.user.id },
+      });
+
+      if (!savedAddress) {
+        return error(res, 'Địa chỉ đã chọn không tồn tại hoặc không thuộc tài khoản của bạn', 400);
+      }
+
+      resolvedDistrictId = savedAddress.district_id;
+      resolvedWardId = savedAddress.ward_id;
+      resolvedAddressDetail = savedAddress.address_detail;
+    }
+
     // 2. Validate device_type nếu có
     if (device_type_id) {
       const deviceType = await prisma.deviceType.findUnique({ where: { id: device_type_id } });
       if (!deviceType || !deviceType.is_active) {
         return error(res, 'Loại thiết bị không hợp lệ', 400);
       }
+      if (deviceType.category_id && deviceType.category_id !== service.category_id) {
+        return error(res, 'Loại thiết bị không phù hợp với dịch vụ đã chọn', 400);
+      }
     }
 
     // 3. Validate ward thuộc district
-    const ward = await prisma.ward.findUnique({ where: { id: ward_id } });
-    if (!ward || ward.district_id !== district_id) {
+    const ward = await prisma.ward.findUnique({ where: { id: resolvedWardId } });
+    if (!ward || ward.district_id !== resolvedDistrictId) {
       return error(res, 'Phường/xã không thuộc khu vực phục vụ đã chọn', 400);
     }
 
@@ -141,9 +164,9 @@ const createBooking = async (req, res) => {
           device_type_id: device_type_id || null,
           description,
           customer_address_id: customer_address_id || null,
-          district_id,
-          ward_id,
-          address_detail,
+          district_id: resolvedDistrictId,
+          ward_id: resolvedWardId,
+          address_detail: resolvedAddressDetail,
           booking_date: new Date(booking_date),
           time_slot_start,
           time_slot_end,
@@ -152,6 +175,7 @@ const createBooking = async (req, res) => {
           payment_method,
           voucher_id: voucher?.id || null,
           discount_amount: discountAmount,
+          ai_summary: ai_diagnosis || null,
         },
       });
 
@@ -191,6 +215,16 @@ const createBooking = async (req, res) => {
         },
       });
 
+      if (image_urls.length > 0) {
+        await tx.bookingImage.createMany({
+          data: image_urls.map((imageUrl) => ({
+            booking_id: newBooking.id,
+            image_url: imageUrl,
+            uploaded_by: ROLES.CUSTOMER,
+          })),
+        });
+      }
+
       return newBooking;
     });
 
@@ -211,6 +245,7 @@ const createBooking = async (req, res) => {
         district: { select: { id: true, name: true } },
         ward: { select: { id: true, name: true } },
         voucher: { select: { id: true, code: true, discount_type: true, discount_value: true } },
+        images: { orderBy: { uploaded_at: 'desc' } },
         payment: { select: { id: true, amount: true, method: true, status: true } },
       },
     });

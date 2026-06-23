@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, Steps, Button, Typography, Tag, Descriptions, Space, Spin, message, Modal, Divider } from 'antd';
+import { Card, Steps, Button, Typography, Tag, Descriptions, Space, Spin, message, Modal, Divider, Timeline, Image, DatePicker } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { bookingApi, quotationApi } from '../../api/bookingApi';
 import { paymentApi } from '../../api/paymentApi';
@@ -7,14 +7,20 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { formatVND, formatDateTime, formatDate } from '../../utils/helpers';
 import { BOOKING_STATUS_STEPS, BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS, CUSTOMER_CANCELLABLE } from '../../utils/constants';
 import { UserOutlined, PhoneOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
+const resolveImageUrl = (url) => (url?.startsWith('http') ? url : `${API_ORIGIN}${url}`);
 
 export default function BookingDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [isCancelling, setIsCancelling] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
+  const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
+  const [rescheduleTime, setRescheduleTime] = useState(null);
+  const [isRescheduling, setIsRescheduling] = useState(false);
 
   const { data: bookingData, isLoading, refetch } = useQuery({
     queryKey: ['booking', id],
@@ -35,6 +41,23 @@ export default function BookingDetailPage() {
   if (!booking) return <div>Không tìm thấy đơn hàng</div>;
 
   const currentStepIndex = BOOKING_STATUS_STEPS.indexOf(booking.status);
+  const quotations = Array.isArray(quotationData?.data) ? quotationData.data : [];
+  const currentQuotation = quotations.find(q => q.status === 'PENDING')
+    || quotations.find(q => q.status === 'ACCEPTED')
+    || quotations[0];
+  const timelineItems = [...(booking.statusHistories || [])]
+    .reverse()
+    .map(item => ({
+      color: item.to_status === 'CANCELLED' ? 'red' : item.to_status === 'COMPLETED' ? 'green' : 'blue',
+      children: (
+        <div>
+          <Text strong>{BOOKING_STATUS_LABELS[item.to_status] || item.to_status}</Text>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{formatDateTime(item.created_at)}</div>
+          {item.note && <div style={{ marginTop: 4 }}>{item.note}</div>}
+        </div>
+      ),
+    }));
+  const canReschedule = ['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(booking.status);
   
   const handleCancel = () => {
     Modal.confirm({
@@ -64,11 +87,38 @@ export default function BookingDetailPage() {
       const res = await paymentApi.createVnpay(id);
       if (res.data?.payment_url) {
         window.location.href = res.data.payment_url;
+      } else {
+        message.success(res.message || res.data?.message || 'Thanh toán thành công');
+        refetch();
       }
     } catch (err) {
       message.error(err.message || 'Lỗi khi tạo thanh toán');
     } finally {
       setIsPaying(false);
+    }
+  };
+
+  const handleReschedule = async () => {
+    if (!rescheduleTime) {
+      message.warning('Vui lòng chọn thời gian mới');
+      return;
+    }
+
+    try {
+      setIsRescheduling(true);
+      await bookingApi.reschedule(id, {
+        booking_date: rescheduleTime.format('YYYY-MM-DD'),
+        time_slot_start: rescheduleTime.format('HH:mm'),
+        time_slot_end: rescheduleTime.add(2, 'hour').format('HH:mm'),
+      });
+      message.success('Đổi lịch thành công');
+      setIsRescheduleOpen(false);
+      setRescheduleTime(null);
+      refetch();
+    } catch (err) {
+      message.error(err.message || 'Lỗi khi đổi lịch');
+    } finally {
+      setIsRescheduling(false);
     }
   };
 
@@ -89,6 +139,9 @@ export default function BookingDetailPage() {
           </Space>
         </div>
         <Space>
+          {canReschedule && (
+            <Button onClick={() => setIsRescheduleOpen(true)}>Đổi lịch</Button>
+          )}
           {CUSTOMER_CANCELLABLE.includes(booking.status) && (
             <Button danger onClick={handleCancel} loading={isCancelling}>Hủy đơn</Button>
           )}
@@ -100,6 +153,28 @@ export default function BookingDetailPage() {
           )}
         </Space>
       </div>
+
+      <Modal
+        title="Đổi lịch hẹn"
+        open={isRescheduleOpen}
+        onCancel={() => setIsRescheduleOpen(false)}
+        onOk={handleReschedule}
+        okText="Xác nhận đổi lịch"
+        cancelText="Quay lại"
+        confirmLoading={isRescheduling}
+      >
+        <DatePicker
+          showTime
+          format="DD/MM/YYYY HH:mm"
+          style={{ width: '100%' }}
+          value={rescheduleTime}
+          onChange={setRescheduleTime}
+          disabledDate={(current) => current && current < dayjs().add(24, 'hour').startOf('day')}
+        />
+        <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
+          Hệ thống sẽ giữ ca làm 2 tiếng và kiểm tra lại điều kiện đặt trước tối thiểu 24 giờ.
+        </Text>
+      </Modal>
 
       <Card className="glass-card" style={{ marginBottom: 24 }}>
         <Steps 
@@ -133,25 +208,47 @@ export default function BookingDetailPage() {
             </Descriptions>
           </Card>
 
-          {quotationData?.data && (
-            <Card title="Báo giá chi tiết" className="glass-card" extra={<Button type="link" onClick={() => navigate(`/customer/quotations/${quotationData.data.id}`)}>Xem chi tiết</Button>}>
+          {currentQuotation && (
+            <Card title="Báo giá chi tiết" className="glass-card" extra={<Button type="link" onClick={() => navigate(`/customer/quotations/${currentQuotation.id}`)}>Xem chi tiết</Button>}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                 <Text>Tổng tiền dịch vụ và vật tư:</Text>
-                <Title level={4} style={{ color: 'var(--orange)', margin: 0 }}>{formatVND(quotationData.data.total_extra_price)}</Title>
+                <Title level={4} style={{ color: 'var(--orange)', margin: 0 }}>{formatVND(currentQuotation.total_extra_price)}</Title>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Text>Trạng thái báo giá:</Text>
-                <Tag color={quotationData.data.status === 'ACCEPTED' ? 'success' : quotationData.data.status === 'REJECTED' ? 'error' : 'warning'}>
-                  {quotationData.data.status === 'ACCEPTED' ? 'Đã duyệt' : quotationData.data.status === 'REJECTED' ? 'Đã từ chối' : 'Chờ duyệt'}
+                <Tag color={currentQuotation.status === 'ACCEPTED' ? 'success' : currentQuotation.status === 'REJECTED' ? 'error' : 'warning'}>
+                  {currentQuotation.status === 'ACCEPTED' ? 'Đã duyệt' : currentQuotation.status === 'REJECTED' ? 'Đã từ chối' : 'Chờ duyệt'}
                 </Tag>
               </div>
-              {booking.status === 'QUOTED' && quotationData.data.status === 'PENDING' && (
+              {booking.status === 'QUOTED' && currentQuotation.status === 'PENDING' && (
                 <div style={{ marginTop: 16, textAlign: 'right' }}>
-                  <Button type="primary" onClick={() => navigate(`/customer/quotations/${quotationData.data.id}`)}>
+                  <Button type="primary" onClick={() => navigate(`/customer/quotations/${currentQuotation.id}`)}>
                     Kiểm tra và duyệt báo giá
                   </Button>
                 </div>
               )}
+            </Card>
+          )}
+          {booking.images?.length > 0 && (
+            <Card title="Hinh anh su co" className="glass-card">
+              <Image.PreviewGroup>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                  {booking.images.map(image => (
+                    <Image
+                      key={image.id}
+                      src={resolveImageUrl(image.image_url)}
+                      alt="Booking evidence"
+                      style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8 }}
+                    />
+                  ))}
+                </div>
+              </Image.PreviewGroup>
+            </Card>
+          )}
+
+          {timelineItems.length > 0 && (
+            <Card title="Lich su trang thai" className="glass-card">
+              <Timeline items={timelineItems} />
             </Card>
           )}
         </Space>

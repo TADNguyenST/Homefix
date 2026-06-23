@@ -16,7 +16,7 @@ export default function QuotationDetailPage() {
 
   const { data: quotationData, isLoading, refetch } = useQuery({
     queryKey: ['quotation-detail', id],
-    queryFn: () => quotationApi.getByBooking(id),
+    queryFn: () => quotationApi.getById(id),
   });
 
   const quotation = quotationData?.data;

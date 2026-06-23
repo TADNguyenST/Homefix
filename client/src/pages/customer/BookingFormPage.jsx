@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Form, Input, Button, Card, Typography, Select, DatePicker, Radio, message, Divider, Space, Steps, Alert, Upload, Row, Col, Tag } from 'antd';
 import { RobotOutlined, UploadOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { bookingApi, addressApi } from '../../api/bookingApi';
+import { bookingApi, addressApi, uploadApi } from '../../api/bookingApi';
 import { serviceApi } from '../../api/serviceApi';
 import { aiApi } from '../../api/aiApi';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -170,6 +170,15 @@ export default function BookingFormPage() {
       const time_slot_start = scheduledTime.format('HH:mm');
       // Thời lượng mặc định 2 tiếng cho một ca làm việc
       const time_slot_end = scheduledTime.add(2, 'hour').format('HH:mm');
+      const uploadableFiles = fileList
+        .map(file => file.originFileObj)
+        .filter(Boolean);
+
+      let imageUrls = [];
+      if (uploadableFiles.length > 0) {
+        const uploadResults = await Promise.all(uploadableFiles.map(file => uploadApi.image(file)));
+        imageUrls = uploadResults.map(result => result.data?.url).filter(Boolean);
+      }
 
       const payload = {
         service_id: values.service_id,
@@ -185,6 +194,7 @@ export default function BookingFormPage() {
         payment_method: values.payment_method,
         // Chẩn đoán đính kèm
         ai_diagnosis: aiResult?.suggested_action || aiResult?.diagnosis_solution || null,
+        image_urls: imageUrls,
         voucher_code: values.voucher_code || form.getFieldValue('voucher_code') || null,
       };
 
