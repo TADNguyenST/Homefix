@@ -130,11 +130,11 @@ export default function TechJobDetailPage() {
         );
       case 'COMPLETING':
         return (
-          <Button type="primary" onClick={() => handleUpdateStatus('COMPLETED')} loading={loadingAction}>
+          <Button type="primary" onClick={() => handleUpdateStatus('AWAITING_PAYMENT')} loading={loadingAction}>
             Hoàn thành sửa chữa
           </Button>
         );
-      case 'COMPLETED':
+      case 'AWAITING_PAYMENT':
         if (job.payment_method === 'CASH' && job.payment?.status === 'UNPAID') {
           return (
             <Button type="primary" style={{ background: 'var(--success)' }} onClick={handleConfirmCash}>
@@ -142,6 +142,8 @@ export default function TechJobDetailPage() {
             </Button>
           );
         }
+        return <Tag color="warning">Chờ khách hàng thanh toán</Tag>;
+      case 'COMPLETED':
         return <Tag color="success">Công việc đã hoàn tất</Tag>;
       default:
         return null;
@@ -193,7 +195,7 @@ export default function TechJobDetailPage() {
             </Descriptions>
           </Card>
 
-          {['QUOTED', 'COMPLETING', 'COMPLETED'].includes(job.status) && (
+          {['QUOTED', 'COMPLETING', 'AWAITING_PAYMENT', 'COMPLETED'].includes(job.status) && (
             <Card title="Báo giá & Thanh toán" className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                 <Text>Tổng tiền dịch vụ và vật tư:</Text>

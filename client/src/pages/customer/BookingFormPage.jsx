@@ -579,10 +579,10 @@ export default function BookingFormPage() {
             <Radio.Group style={{ width: '100%' }}>
               <Space direction="vertical" style={{ width: '100%' }}>
                 <Card size="small" style={{ border: '1px solid #e2e8f0', cursor: 'pointer' }} onClick={() => form.setFieldsValue({ payment_method: 'CASH' })}>
-                  <Radio value="CASH">Tiền mặt sau khi hoàn thành</Radio>
+                  <Radio value="CASH">Tiền mặt sau khi sửa chữa hoàn tất</Radio>
                 </Card>
                 <Card size="small" style={{ border: '1px solid #e2e8f0', cursor: 'pointer' }} onClick={() => form.setFieldsValue({ payment_method: 'VNPAY' })}>
-                  <Radio value="VNPAY">Chuyển khoản / VNPAY</Radio>
+                  <Radio value="VNPAY">VNPAY sau khi sửa chữa hoàn tất</Radio>
                 </Card>
               </Space>
             </Radio.Group>

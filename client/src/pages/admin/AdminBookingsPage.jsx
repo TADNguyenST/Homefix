@@ -188,7 +188,7 @@ export default function AdminBookingsPage() {
               Chuyển thợ
             </Button>
           )}
-          {!['COMPLETED', 'CANCELLED'].includes(record.status) && (
+          {!['AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED'].includes(record.status) && (
             <Button size="small" danger icon={<CloseCircleOutlined />} onClick={() => cancelBooking(record)}>Hủy</Button>
           )}
         </Space>
@@ -369,7 +369,7 @@ export default function AdminBookingsPage() {
                   Chuyển thợ
                 </Button>
               )}
-              {!['COMPLETED', 'CANCELLED'].includes(bookingDetail.status) && (
+              {!['AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED'].includes(bookingDetail.status) && (
                 <Button danger icon={<CloseCircleOutlined />} onClick={() => cancelBooking(bookingDetail)}>Hủy đơn</Button>
               )}
             </Form>

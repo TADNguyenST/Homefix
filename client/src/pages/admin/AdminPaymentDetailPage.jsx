@@ -22,7 +22,8 @@ const BOOKING_STATUS_LABELS = {
   PENDING: 'Chờ xác nhận', CONFIRMED: 'Đã xác nhận',
   ASSIGNED: 'Đã gán thợ', IN_PROGRESS: 'Đang thực hiện',
   INSPECTING: 'Đang khảo sát', QUOTED: 'Chờ duyệt báo giá',
-  COMPLETING: 'Đang sửa chữa', COMPLETED: 'Hoàn thành',
+  COMPLETING: 'Đang sửa chữa', AWAITING_PAYMENT: 'Chờ thanh toán',
+  COMPLETED: 'Hoàn thành',
   CANCELLED: 'Đã hủy',
 };
 
@@ -158,7 +159,7 @@ export default function AdminPaymentDetailPage() {
                 <Text strong style={{ color: 'var(--navy)' }}>#{booking?.id}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Trạng thái đơn" span={1}>
-                <Tag color={booking?.status === 'COMPLETED' ? 'success' : booking?.status === 'CANCELLED' ? 'error' : 'processing'}>
+                <Tag color={booking?.status === 'COMPLETED' ? 'success' : booking?.status === 'CANCELLED' ? 'error' : booking?.status === 'AWAITING_PAYMENT' ? 'warning' : 'processing'}>
                   {BOOKING_STATUS_LABELS[booking?.status] || booking?.status}
                 </Tag>
               </Descriptions.Item>

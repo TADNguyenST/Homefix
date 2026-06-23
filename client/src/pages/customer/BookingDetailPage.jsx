@@ -30,7 +30,7 @@ export default function BookingDetailPage() {
   const { data: quotationData } = useQuery({
     queryKey: ['quotation', id],
     queryFn: () => quotationApi.getByBooking(id),
-    enabled: bookingData?.data?.status === 'QUOTED' || bookingData?.data?.status === 'COMPLETING' || bookingData?.data?.status === 'COMPLETED',
+    enabled: ['QUOTED', 'COMPLETING', 'AWAITING_PAYMENT', 'COMPLETED'].includes(bookingData?.data?.status),
   });
 
   if (isLoading) {
@@ -147,10 +147,10 @@ export default function BookingDetailPage() {
           {CUSTOMER_CANCELLABLE.includes(booking.status) && (
             <Button danger onClick={handleCancel} loading={isCancelling}>Hủy đơn</Button>
           )}
-          {booking.status === 'COMPLETED' && booking.payment?.status === 'UNPAID' && booking.payment_method === 'VNPAY' && (
+          {booking.status === 'AWAITING_PAYMENT' && booking.payment?.status !== 'PAID' && booking.payment_method === 'VNPAY' && (
             <Button type="primary" onClick={handlePayment} loading={isPaying}>Thanh toán ngay</Button>
           )}
-          {booking.status === 'COMPLETED' && (
+          {booking.status === 'COMPLETED' && booking.payment?.status === 'PAID' && !booking.review && (
             <Button type="primary" onClick={() => navigate(`/customer/reviews/new/${id}`)}>Đánh giá thợ</Button>
           )}
         </Space>
@@ -212,7 +212,7 @@ export default function BookingDetailPage() {
             title: BOOKING_STATUS_LABELS[status],
           }))} 
         />
-        {booking.status === 'CANCELLED' && (
+          {booking.status === 'CANCELLED' && (
           <div style={{ textAlign: 'center', marginTop: 24, color: 'var(--status-cancelled)', fontWeight: 600 }}>
             Đơn hàng đã bị hủy
           </div>
@@ -259,6 +259,17 @@ export default function BookingDetailPage() {
               )}
             </Card>
           )}
+        {booking.status === 'AWAITING_PAYMENT' && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginTop: 20 }}
+            message="Kỹ thuật viên đã hoàn tất sửa chữa"
+            description={booking.payment_method === 'VNPAY'
+              ? 'Vui lòng thanh toán VNPAY để hoàn tất đơn hàng.'
+              : 'Vui lòng thanh toán tiền mặt cho kỹ thuật viên. Đơn sẽ hoàn tất sau khi kỹ thuật viên xác nhận đã thu tiền.'}
+          />
+        )}
           {booking.images?.length > 0 && (
             <Card title="Hinh anh su co" className="glass-card">
               <Image.PreviewGroup>

@@ -9,9 +9,9 @@ const {
 } = require('../config/constants');
 const {
   notifyQuotationSent,
-  notifyBookingCompleted,
-  notifyPaymentSuccess,
+  notifyAwaitingPayment,
 } = require('../services/notificationService');
+const { completeBookingPayment } = require('../services/paymentCompletionService');
 
 const getMyProfile = async (userId, include = {}) => {
   return prisma.technicianProfile.findUnique({
@@ -175,13 +175,13 @@ const updateJobStatus = async (req, res) => {
     const technicianAllowedStatuses = [
       BOOKING_STATUS.INSPECTING,
       BOOKING_STATUS.COMPLETING,
-      BOOKING_STATUS.COMPLETED,
+      BOOKING_STATUS.AWAITING_PAYMENT,
     ];
     if (!allowedTransitions.includes(new_status) || !technicianAllowedStatuses.includes(new_status)) {
       return error(res, `Khong the chuyen tu ${booking.status} sang ${new_status}`, 400);
     }
 
-    const ops = [
+    await prisma.$transaction([
       prisma.booking.update({ where: { id: bookingId }, data: { status: new_status } }),
       prisma.bookingStatusHistory.create({
         data: {
@@ -192,18 +192,9 @@ const updateJobStatus = async (req, res) => {
           note: note || `Tho cap nhat trang thai sang ${new_status}`,
         },
       }),
-    ];
-
-    if (new_status === BOOKING_STATUS.COMPLETED) {
-      ops.push(prisma.technicianProfile.update({
-        where: { id: profile.id },
-        data: { total_completed_jobs: { increment: 1 } },
-      }));
-    }
-
-    await prisma.$transaction(ops);
-    if (new_status === BOOKING_STATUS.COMPLETED) {
-      await notifyBookingCompleted(booking.customer_id, bookingId);
+    ]);
+    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT) {
+      await notifyAwaitingPayment(booking.customer_id, bookingId, booking.payment_method);
     }
 
     return success(res, null, `Cap nhat trang thai thanh ${new_status} thanh cong`);
@@ -280,8 +271,8 @@ const confirmCashPayment = async (req, res) => {
     if (!booking || booking.technician_profile_id !== profile.id) {
       return error(res, 'Don hang khong ton tai hoac khong thuoc ve ban', 404);
     }
-    if (booking.status !== BOOKING_STATUS.COMPLETED) {
-      return error(res, 'Chi co the xac nhan thu tien khi don da hoan thanh', 400);
+    if (booking.status !== BOOKING_STATUS.AWAITING_PAYMENT) {
+      return error(res, 'Chỉ có thể xác nhận thu tiền khi đơn đang chờ thanh toán', 400);
     }
     if (booking.payment_method !== 'CASH') {
       return error(res, 'Don nay khong su dung phuong thuc tien mat', 400);
@@ -295,20 +286,12 @@ const confirmCashPayment = async (req, res) => {
     });
     const finalPrice = Number(booking.estimated_price) + (quotation ? Number(quotation.total_extra_price) : 0);
 
-    await prisma.$transaction([
-      prisma.payment.update({
-        where: { booking_id: bookingId },
-        data: {
-          status: PAYMENT_STATUS.PAID,
-          amount: finalPrice,
-          paid_at: new Date(),
-          confirmed_by: req.user.id,
-        },
-      }),
-      prisma.booking.update({ where: { id: bookingId }, data: { final_price: finalPrice } }),
-    ]);
-
-    await notifyPaymentSuccess(booking.customer_id, bookingId, finalPrice);
+    await completeBookingPayment({
+      bookingId,
+      amount: finalPrice,
+      changedBy: req.user.id,
+      confirmedBy: req.user.id,
+    });
     return success(res, null, `Xac nhan thu tien mat ${finalPrice.toLocaleString('vi-VN')}d thanh cong`);
   } catch (err) {
     console.error('Confirm cash payment error:', err);
