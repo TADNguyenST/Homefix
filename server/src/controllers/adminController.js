@@ -1780,6 +1780,95 @@ const getDashboard = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/payments/:id
+ * Chi tiết một payment kèm booking, customer, service, technician, quotation items.
+ */
+const getPaymentDetail = async (req, res) => {
+  try {
+    const paymentId = parseInt(req.params.id);
+
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        booking: {
+          include: {
+            customer: { select: { id: true, full_name: true, email: true, phone: true, avatar_url: true } },
+            technicianProfile: {
+              include: {
+                user: { select: { id: true, full_name: true, phone: true, email: true } },
+              },
+            },
+            service: { include: { category: { select: { id: true, name: true } } } },
+            deviceType: { select: { id: true, name: true } },
+            district: { select: { id: true, name: true } },
+            ward: { select: { id: true, name: true } },
+            voucher: true,
+            quotations: {
+              where: { status: 'ACCEPTED' },
+              include: { items: true },
+              take: 1,
+            },
+            statusHistories: {
+              orderBy: { created_at: 'desc' },
+              include: { user: { select: { id: true, full_name: true, role: true } } },
+            },
+          },
+        },
+        confirmer: { select: { id: true, full_name: true } },
+      },
+    });
+
+    if (!payment) return error(res, 'Không tìm thấy giao dịch', 404);
+    return success(res, payment);
+  } catch (err) {
+    console.error('getPaymentDetail error:', err);
+    return error(res, 'Không thể lấy chi tiết giao dịch', 500);
+  }
+};
+
+/**
+ * GET /admin/vouchers/:id/usages
+ * Lịch sử sử dụng của một voucher cụ thể.
+ */
+const getVoucherUsages = async (req, res) => {
+  try {
+    const voucherId = parseInt(req.params.id);
+    const { skip, take, page, limit } = getPagination(req.query);
+
+    const voucher = await prisma.voucher.findUnique({ where: { id: voucherId } });
+    if (!voucher) return error(res, 'Voucher không tồn tại', 404);
+
+    const [usages, total] = await Promise.all([
+      prisma.voucherUsage.findMany({
+        where: { voucher_id: voucherId },
+        skip,
+        take,
+        orderBy: { used_at: 'desc' },
+        include: {
+          user: { select: { id: true, full_name: true, email: true, phone: true, avatar_url: true } },
+          booking: {
+            select: {
+              id: true,
+              status: true,
+              booking_date: true,
+              estimated_price: true,
+              final_price: true,
+              service: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }),
+      prisma.voucherUsage.count({ where: { voucher_id: voucherId } }),
+    ]);
+
+    return paginated(res, { voucher, usages }, total, page, limit);
+  } catch (err) {
+    console.error('getVoucherUsages error:', err);
+    return error(res, 'Không thể lấy lịch sử sử dụng voucher', 500);
+  }
+};
+
 module.exports = {
   // Booking Dispatch
   getBookings, getBookingDetail, confirmBooking, assignTechnician, reassignTechnician, cancelBooking,
@@ -1797,9 +1886,9 @@ module.exports = {
   // District & Ward
   getDistricts, createDistrict, updateDistrict, deleteDistrict, createWard, updateWard, deleteWard,
   // Voucher CRUD
-  getVouchers, createVoucher, updateVoucher, toggleVoucher,
+  getVouchers, createVoucher, updateVoucher, toggleVoucher, getVoucherUsages,
   // Payment & Complaint
-  getPayments, getComplaints, resolveComplaint,
+  getPayments, getPaymentDetail, getComplaints, resolveComplaint,
   // Dashboard
   getDashboard,
 };

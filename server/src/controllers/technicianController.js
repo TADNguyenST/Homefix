@@ -376,18 +376,31 @@ const getMyRating = async (req, res) => {
       where: { id: profile.id },
       select: { avg_rating: true, total_completed_jobs: true },
     });
-    const reviews = await prisma.review.findMany({
+
+    const reviewRecords = await prisma.review.findMany({
       where: { technician_profile_id: profile.id },
-      select: { rating: true },
+      orderBy: { created_at: 'desc' },
+      include: {
+        customer: { select: { id: true, full_name: true, avatar_url: true } },
+        booking: {
+          select: {
+            id: true,
+            booking_date: true,
+            service: { select: { id: true, name: true } },
+          },
+        },
+      },
     });
+
     const ratingBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    reviews.forEach((review) => { ratingBreakdown[review.rating] += 1; });
+    reviewRecords.forEach((review) => { ratingBreakdown[review.rating] += 1; });
 
     return success(res, {
       avg_rating: fullProfile.avg_rating,
       total_completed_jobs: fullProfile.total_completed_jobs,
-      total_reviews: reviews.length,
+      total_reviews: reviewRecords.length,
       rating_breakdown: ratingBreakdown,
+      reviews: reviewRecords,
     });
   } catch (err) {
     console.error('Get my rating error:', err);
