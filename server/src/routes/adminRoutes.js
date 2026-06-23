@@ -102,11 +102,13 @@ router.get('/vouchers', admin.getVouchers);
 router.post('/vouchers', validate(createVoucherSchema), admin.createVoucher);
 router.put('/vouchers/:id', validate(createVoucherSchema), admin.updateVoucher);
 router.put('/vouchers/:id/toggle', admin.toggleVoucher);
+router.get('/vouchers/:id/usages', admin.getVoucherUsages);
 
 // ========================
 // PAYMENT & COMPLAINT
 // ========================
 router.get('/payments', admin.getPayments);
+router.get('/payments/:id', admin.getPaymentDetail);
 router.get('/complaints', admin.getComplaints);
 router.put('/complaints/:id/resolve', validate(resolveComplaintSchema), admin.resolveComplaint);
 

@@ -57,9 +57,11 @@ export const adminApi = {
   createVoucher: (data) => axiosClient.post('/admin/vouchers', data),
   updateVoucher: (id, data) => axiosClient.put(`/admin/vouchers/${id}`, data),
   toggleVoucher: (id) => axiosClient.put(`/admin/vouchers/${id}/toggle`),
+  getVoucherUsages: (id, params) => axiosClient.get(`/admin/vouchers/${id}/usages`, { params }),
 
   // Payments
   getPayments: (params) => axiosClient.get('/admin/payments', { params }),
+  getPaymentById: (id) => axiosClient.get(`/admin/payments/${id}`),
 
   // Complaints
   getComplaints: (params) => axiosClient.get('/admin/complaints', { params }),
@@ -68,3 +70,4 @@ export const adminApi = {
   // AI
   recommendTech: (bookingId) => axiosClient.get(`/ai/recommend-tech/${bookingId}`),
 };
+
