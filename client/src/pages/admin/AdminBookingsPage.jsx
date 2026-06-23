@@ -25,7 +25,7 @@ export default function AdminBookingsPage() {
 
   const { data: techsData } = useQuery({
     queryKey: ['admin-technicians'],
-    queryFn: () => adminApi.getTechnicians(),
+    queryFn: () => adminApi.getTechnicians({ limit: 100 }),
   });
 
   const { data: detailData, isLoading: detailLoading } = useQuery({
