@@ -64,9 +64,53 @@ export default function TechJobDetailPage() {
     switch (job.status) {
       case 'ASSIGNED':
         return (
-          <Button type="primary" onClick={() => handleUpdateStatus('IN_PROGRESS')} loading={loadingAction}>
-            Bắt đầu di chuyển
-          </Button>
+          <Space>
+            <Button type="primary" onClick={async () => {
+              try {
+                setLoadingAction(true);
+                await technicianApi.acceptJob(id);
+                message.success('Đã nhận công việc và chuyển sang trạng thái đang thực hiện');
+                refetch();
+              } catch (err) {
+                message.error(err.message || 'Lỗi khi nhận việc');
+              } finally {
+                setLoadingAction(false);
+              }
+            }} loading={loadingAction}>
+              Nhận công việc (Bắt đầu di chuyển)
+            </Button>
+            <Button danger onClick={() => {
+              let reason = '';
+              Modal.confirm({
+                title: 'Từ chối công việc?',
+                content: (
+                  <div style={{ marginTop: 12 }}>
+                    <p>Vui lòng nhập lý do từ chối:</p>
+                    <textarea 
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: 4, border: '1px solid #d9d9d9', outline: 'none' }} 
+                      rows={3}
+                      placeholder="Lý do từ chối nhận đơn..."
+                      onChange={(e) => { reason = e.target.value; }}
+                    />
+                  </div>
+                ),
+                onOk: async () => {
+                  try {
+                    setLoadingAction(true);
+                    await technicianApi.rejectJob(id, { reason });
+                    message.success('Đã từ chối công việc');
+                    navigate('/technician/jobs');
+                  } catch (err) {
+                    message.error(err.message || 'Lỗi khi từ chối việc');
+                  } finally {
+                    setLoadingAction(false);
+                  }
+                }
+              });
+            }} loading={loadingAction}>
+              Từ chối nhận việc
+            </Button>
+          </Space>
         );
       case 'IN_PROGRESS':
         return (

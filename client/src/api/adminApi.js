@@ -66,5 +66,5 @@ export const adminApi = {
   resolveComplaint: (id, data) => axiosClient.put(`/admin/complaints/${id}/resolve`, data),
 
   // AI
-  recommendTech: (bookingId) => axiosClient.get(`/ai/recommend-tech/${bookingId}`),
+  recommendTech: (bookingId) => axiosClient.get(`/ai/recommend-tech/${bookingId}?_t=${Date.now()}`),
 };
