@@ -19,7 +19,7 @@ export default function CustomerDashboard() {
   });
 
   const bookings = bookingsData?.data || [];
-  
+
   const activeBookings = bookings.filter(b => ['PENDING', 'CONFIRMED', 'ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING'].includes(b.status));
   const completedBookings = bookings.filter(b => b.status === 'COMPLETED');
   const totalSpent = completedBookings.filter(b => b.payment_status === 'PAID' || b.payment?.status === 'PAID').reduce((sum, b) => sum + (b.final_price || b.total_price || 0), 0);
@@ -38,14 +38,14 @@ export default function CustomerDashboard() {
             </Avatar>
           </Col>
           <Col flex="auto">
-            <Title level={3} style={{ color: 'white', margin: 0, fontWeight: 700 }}>Chào mừng trở lại, {user?.full_name}!</Title>
+            <Title level={3} style={{ color: 'black', margin: 0, fontWeight: 700 }}>Chào mừng trở lại, {user?.full_name}!</Title>
             <Text style={{ color: 'var(--text-muted)', fontSize: 15 }}>HomeFix luôn sẵn sàng hỗ trợ sửa chữa ngôi nhà của bạn mọi lúc mọi nơi.</Text>
           </Col>
           <Col>
-            <Button 
-              type="primary" 
-              size="large" 
-              icon={<ArrowRightOutlined />} 
+            <Button
+              type="primary"
+              size="large"
+              icon={<ArrowRightOutlined />}
               onClick={() => navigate('/customer/booking')}
               style={{ background: 'var(--orange)', borderColor: 'var(--orange)', fontWeight: 600, padding: '0 24px' }}
             >
@@ -57,11 +57,11 @@ export default function CustomerDashboard() {
 
       <Row gutter={[24, 24]} style={{ marginBottom: 40 }}>
         <Col xs={24} md={8}>
-          <Card className="hover-card glass-card" styles={{ body: { padding: 24 } }} style={{ borderTop: '4px solid var(--orange)' }}>
-            <Statistic 
-              title={<span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Đơn đang xử lý</span>} 
-              value={activeBookings.length} 
-              prefix={<CalendarOutlined style={{ color: 'var(--orange)' }} />} 
+          <Card className="hover-card glass-card" styles={{ body: { padding: 24 } }} style={{ borderTop: '4px solid var(--orange)', height: '100%' }}>
+            <Statistic
+              title={<span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Đơn đang xử lý</span>}
+              value={activeBookings.length}
+              prefix={<CalendarOutlined style={{ color: 'var(--orange)' }} />}
               valueStyle={{ fontSize: 36, fontWeight: 700, marginTop: 8, color: 'var(--navy)' }}
             />
             <div style={{ marginTop: 24 }}>
@@ -72,23 +72,33 @@ export default function CustomerDashboard() {
           </Card>
         </Col>
         <Col xs={24} md={8}>
-          <Card className="hover-card glass-card" styles={{ body: { padding: 24 } }} style={{ borderTop: '4px solid var(--success)' }}>
-            <Statistic 
-              title={<span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Đơn hoàn thành</span>} 
-              value={completedBookings.length} 
-              prefix={<CheckCircleOutlined style={{ color: 'var(--success)' }} />} 
+          <Card className="hover-card glass-card" styles={{ body: { padding: 24 } }} style={{ borderTop: '4px solid var(--success)', height: '100%' }}>
+            <Statistic
+              title={<span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Đơn hoàn thành</span>}
+              value={completedBookings.length}
+              prefix={<CheckCircleOutlined style={{ color: 'var(--success)' }} />}
               valueStyle={{ fontSize: 36, fontWeight: 700, marginTop: 8, color: 'var(--navy)' }}
             />
+            <div style={{ marginTop: 24 }}>
+              <Link to="/customer/bookings" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                Xem lịch sử <ArrowRightOutlined />
+              </Link>
+            </div>
           </Card>
         </Col>
         <Col xs={24} md={8}>
-          <Card className="hover-card glass-card" styles={{ body: { padding: 24 } }} style={{ borderTop: '4px solid var(--info)' }}>
-            <Statistic 
-              title={<span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Tổng chi tiêu</span>} 
-              value={formatVND(totalSpent)} 
-              prefix={<WalletOutlined style={{ color: 'var(--info)' }} />} 
+          <Card className="hover-card glass-card" styles={{ body: { padding: 24 } }} style={{ borderTop: '4px solid var(--info)', height: '100%' }}>
+            <Statistic
+              title={<span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Tổng chi tiêu</span>}
+              value={formatVND(totalSpent)}
+              prefix={<WalletOutlined style={{ color: 'var(--info)' }} />}
               valueStyle={{ fontSize: 28, fontWeight: 700, marginTop: 14, color: 'var(--navy)' }}
             />
+            <div style={{ marginTop: 24 }}>
+              <Link to="/customer/vouchers" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                Ưu đãi của tôi <ArrowRightOutlined />
+              </Link>
+            </div>
           </Card>
         </Col>
       </Row>

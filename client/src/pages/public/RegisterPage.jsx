@@ -2,6 +2,7 @@ import { Form, Input, Button, Card, Typography, Divider, message, Select, Modal 
 import { UserOutlined, LockOutlined, MailOutlined, PhoneOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { authApi } from '../../api/authApi';
 import { useState } from 'react';
 
 const { Title, Text } = Typography;
@@ -40,6 +41,18 @@ export default function RegisterPage() {
       navigate('/login');
     } catch (err) {
       message.error(err.message || 'Xác thực OTP thất bại');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    try {
+      setOtpLoading(true);
+      await authApi.resendOtp({ email: registeredEmail });
+      message.success('Đã gửi lại mã OTP. Vui lòng kiểm tra email!');
+    } catch (err) {
+      message.error(err.response?.data?.message || err.message || 'Gửi lại mã thất bại');
     } finally {
       setOtpLoading(false);
     }
@@ -92,6 +105,24 @@ export default function RegisterPage() {
             <Input.Password prefix={<LockOutlined />} placeholder="Mật khẩu" />
           </Form.Item>
 
+          <Form.Item
+            name="confirm_password"
+            dependencies={['password']}
+            rules={[
+              { required: true, message: 'Vui lòng xác nhận mật khẩu!' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('password') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('Mật khẩu xác nhận không khớp!'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password prefix={<LockOutlined />} placeholder="Xác nhận mật khẩu" />
+          </Form.Item>
+
 
           <Form.Item>
             <Button type="primary" htmlType="submit" block loading={loading}>
@@ -124,9 +155,14 @@ export default function RegisterPage() {
           >
             <Input placeholder="Nhập mã OTP 6 số" size="large" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block loading={otpLoading} size="large">
-            Xác nhận
-          </Button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button type="primary" htmlType="submit" style={{ flex: 1 }} loading={otpLoading} size="large">
+              Xác nhận
+            </Button>
+            <Button onClick={handleResendOtp} disabled={otpLoading} size="large">
+              Gửi lại mã
+            </Button>
+          </div>
         </Form>
       </Modal>
     </div>

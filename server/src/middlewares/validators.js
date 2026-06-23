@@ -5,15 +5,28 @@
 
 const { z } = require('zod');
 
+const TEMP_EMAIL_DOMAINS = [
+  'yopmail.com', '10minutemail.com', 'mailinator.com', 
+  'tempmail.com', 'guerrillamail.com', 'dropmail.me', 
+  'dispostable.com', 'temp-mail.org'
+];
+
 // ========================
 // AUTH
 // ========================
 
 const registerSchema = z.object({
-  email: z.string().email('Email không hợp lệ'),
-  password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự').max(100),
+  email: z.string().email('Email không hợp lệ').refine(email => {
+    const domain = email.split('@')[1];
+    return !TEMP_EMAIL_DOMAINS.includes(domain.toLowerCase());
+  }, { message: 'Hệ thống không chấp nhận địa chỉ email tạm thời' }),
+  password: z.string().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/, 'Mật khẩu phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt').max(100),
+  confirm_password: z.string().min(1, 'Vui lòng xác nhận mật khẩu'),
   full_name: z.string().min(2, 'Họ tên tối thiểu 2 ký tự').max(100),
   phone: z.string().regex(/^(0[3-9])\d{8}$/, 'Số điện thoại không hợp lệ (VD: 0901234567)').optional(),
+}).refine((data) => data.password === data.confirm_password, {
+  message: "Mật khẩu xác nhận không khớp",
+  path: ["confirm_password"],
 });
 
 const loginSchema = z.object({
@@ -33,7 +46,11 @@ const forgotPasswordSchema = z.object({
 const resetPasswordSchema = z.object({
   email: z.string().email('Email không hợp lệ'),
   otp_code: z.string().length(6, 'Mã OTP phải đúng 6 số'),
-  new_password: z.string().min(6, 'Mật khẩu mới tối thiểu 6 ký tự').max(100),
+  new_password: z.string().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/, 'Mật khẩu mới phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt').max(100),
+  confirm_password: z.string().min(1, 'Vui lòng xác nhận mật khẩu'),
+}).refine((data) => data.new_password === data.confirm_password, {
+  message: "Mật khẩu xác nhận không khớp",
+  path: ["confirm_password"],
 });
 
 const updateProfileSchema = z.object({
@@ -44,7 +61,7 @@ const updateProfileSchema = z.object({
 
 const changePasswordSchema = z.object({
   current_password: z.string().min(1, 'Vui lòng nhập mật khẩu hiện tại'),
-  new_password: z.string().min(6, 'Mật khẩu mới tối thiểu 6 ký tự').max(100),
+  new_password: z.string().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/, 'Mật khẩu mới phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt').max(100),
 });
 
 // ========================
@@ -256,9 +273,10 @@ const validate = (schema) => {
           field: e.path.join('.'),
           message: e.message,
         }));
+        const errorMessage = errors.map(e => e.message).join('. ');
         return res.status(400).json({
           success: false,
-          message: 'Dữ liệu không hợp lệ',
+          message: errorMessage,
           errors,
         });
       }
