@@ -95,7 +95,9 @@ export default function AdminBookingsPage() {
       setLoadingAction(true);
       setRecommendClicked(true);
       const res = await adminApi.recommendTech(selectedBooking.id);
-      const suggestions = res.data?.data?.technicians || res.data?.data || [];
+      const suggestions = Array.isArray(res.data)
+        ? res.data
+        : res.data?.technicians || [];
       setRecommendedTechs(suggestions);
       if (suggestions[0]?.id) {
         setSelectedTechId(suggestions[0].id);
