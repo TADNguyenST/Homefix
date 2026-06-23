@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../utils/prisma');
+const activeSessions = require('../utils/sessionStore');
 
 const authMiddleware = async (req, res, next) => {
   try {
@@ -7,6 +8,12 @@ const authMiddleware = async (req, res, next) => {
     if (!token) return res.status(401).json({ success: false, error: 'Access denied. No token provided.' });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Nếu token cũ thì đá 
+    const currentToken = activeSessions.get(decoded.id);
+    if (currentToken && currentToken !== token) {
+      return res.status(401).json({ success: false, error: 'Tài khoản đang được đăng nhập ở thiết bị khác.' });
+    }
 
     // Kiểm tra user còn active không (phòng trường hợp bị lock sau khi JWT đã cấp)
     const user = await prisma.user.findUnique({
