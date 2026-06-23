@@ -18,6 +18,8 @@ const wardTypeLabels = {
 };
 
 export default function AdminDistrictsPage() {
+  const [search, setSearch] = useState('');
+
   const [districtModalOpen, setDistrictModalOpen] = useState(false);
   const [wardModalOpen, setWardModalOpen] = useState(false);
   const [editingDistrict, setEditingDistrict] = useState(null);
@@ -28,11 +30,11 @@ export default function AdminDistrictsPage() {
   const [wardForm] = Form.useForm();
 
   const { data: districtsData, isLoading, refetch } = useQuery({
-    queryKey: ['admin-districts'],
-    queryFn: adminApi.getDistricts,
+    queryKey: ['admin-districts', search],
+    queryFn: () => adminApi.getDistricts({ search }),
   });
 
-  const districts = districtsData?.data || [];
+  const districts = districtsData?.data?.data || districtsData?.data || [];
 
   const openDistrictModal = (district = null) => {
     setEditingDistrict(district);
@@ -60,7 +62,7 @@ export default function AdminDistrictsPage() {
       setDistrictModalOpen(false);
       refetch();
     } catch (err) {
-      message.error(err.message || 'Lỗi khi lưu khu vực phục vụ');
+      message.error(err.response?.data?.message || err.message || 'Lỗi khi lưu khu vực phục vụ');
     } finally {
       setLoadingAction(false);
     }
@@ -79,7 +81,7 @@ export default function AdminDistrictsPage() {
       setWardModalOpen(false);
       refetch();
     } catch (err) {
-      message.error(err.message || 'Lỗi khi lưu phường/xã');
+      message.error(err.response?.data?.message || err.message || 'Lỗi khi lưu phường/xã');
     } finally {
       setLoadingAction(false);
     }
@@ -93,9 +95,13 @@ export default function AdminDistrictsPage() {
       cancelText: 'Hủy',
       okButtonProps: { danger: true },
       onOk: async () => {
-        await adminApi.deleteDistrict(district.id);
-        message.success('Đã xóa khu vực phục vụ');
-        refetch();
+        try {
+          await adminApi.deleteDistrict(district.id);
+          message.success('Đã xóa khu vực phục vụ');
+          refetch();
+        } catch (err) {
+          message.error(err.response?.data?.message || err.message || 'Lỗi khi xóa');
+        }
       },
     });
   };
@@ -108,9 +114,13 @@ export default function AdminDistrictsPage() {
       cancelText: 'Hủy',
       okButtonProps: { danger: true },
       onOk: async () => {
-        await adminApi.deleteWard(ward.id);
-        message.success('Đã xóa phường/xã');
-        refetch();
+        try {
+          await adminApi.deleteWard(ward.id);
+          message.success('Đã xóa phường/xã');
+          refetch();
+        } catch (err) {
+          message.error(err.response?.data?.message || err.message || 'Lỗi khi xóa');
+        }
       },
     });
   };
@@ -173,33 +183,47 @@ export default function AdminDistrictsPage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <Title level={2} style={{ color: 'var(--navy)', marginBottom: 8 }}>Khu vực hoạt động</Title>
           <p>Quản lý khu vực phục vụ và danh sách phường/xã sau sáp nhập của Cần Thơ mới</p>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => openDistrictModal()}>Thêm khu vực</Button>
+        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => openDistrictModal()}>
+          Thêm khu vực
+        </Button>
       </div>
 
       <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
+        
+        {/* Lọc và Tìm kiếm */}
+        <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <Input.Search 
+            placeholder="Tìm khu vực theo tên" 
+            allowClear 
+            onSearch={(value) => setSearch(value)}
+            style={{ width: 300 }}
+          />
+        </div>
+
         <Table
           columns={columns}
           dataSource={districts}
           rowKey="id"
           loading={isLoading}
           expandable={{ expandedRowRender }}
+          pagination={{ pageSize: 15 }}
         />
       </div>
 
       <Modal
-        title={editingDistrict ? 'Sửa khu vực phục vụ' : 'Thêm khu vực phục vụ mới'}
+        title={<span style={{ fontSize: 20, color: 'var(--navy)' }}>{editingDistrict ? 'Sửa khu vực phục vụ' : 'Thêm khu vực phục vụ mới'}</span>}
         open={districtModalOpen}
         onCancel={() => setDistrictModalOpen(false)}
         footer={null}
       >
-        <Form form={districtForm} layout="vertical" onFinish={saveDistrict}>
+        <Form form={districtForm} layout="vertical" onFinish={saveDistrict} style={{ marginTop: 24 }}>
           <Form.Item name="name" label="Tên khu vực phục vụ" rules={[{ required: true, message: 'Vui lòng nhập tên khu vực' }]}>
-            <Input />
+            <Input placeholder="Vd: Ninh Kiều" />
           </Form.Item>
           <Form.Item name="type" label="Nhóm khu vực" rules={[{ required: true, message: 'Vui lòng chọn nhóm khu vực' }]}>
             <Select options={[
@@ -207,21 +231,27 @@ export default function AdminDistrictsPage() {
               { value: 'HUYEN', label: 'Khu vực mở rộng' },
             ]} />
           </Form.Item>
-          <Button type="primary" htmlType="submit" loading={loadingAction} block>
-            Lưu lại
-          </Button>
+          
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => setDistrictModalOpen(false)}>Hủy</Button>
+              <Button type="primary" htmlType="submit" loading={loadingAction}>
+                Lưu lại
+              </Button>
+            </Space>
+          </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title={editingWard ? 'Sửa phường/xã' : `Thêm phường/xã cho ${selectedDistrict?.name || ''}`}
+        title={<span style={{ fontSize: 20, color: 'var(--navy)' }}>{editingWard ? 'Sửa phường/xã' : `Thêm phường/xã cho ${selectedDistrict?.name || ''}`}</span>}
         open={wardModalOpen}
         onCancel={() => setWardModalOpen(false)}
         footer={null}
       >
-        <Form form={wardForm} layout="vertical" onFinish={saveWard}>
+        <Form form={wardForm} layout="vertical" onFinish={saveWard} style={{ marginTop: 24 }}>
           <Form.Item name="name" label="Tên phường/xã" rules={[{ required: true, message: 'Vui lòng nhập tên phường/xã' }]}>
-            <Input />
+            <Input placeholder="Vd: Xuân Khánh" />
           </Form.Item>
           <Form.Item name="type" label="Loại" rules={[{ required: true, message: 'Vui lòng chọn loại phường/xã' }]}>
             <Select options={[
@@ -230,9 +260,15 @@ export default function AdminDistrictsPage() {
               { value: 'THI_TRAN', label: 'Thị trấn' },
             ]} />
           </Form.Item>
-          <Button type="primary" htmlType="submit" loading={loadingAction} block>
-            Lưu lại
-          </Button>
+
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => setWardModalOpen(false)}>Hủy</Button>
+              <Button type="primary" htmlType="submit" loading={loadingAction}>
+                Lưu lại
+              </Button>
+            </Space>
+          </Form.Item>
         </Form>
       </Modal>
     </div>

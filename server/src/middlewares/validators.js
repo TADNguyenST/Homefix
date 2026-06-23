@@ -176,6 +176,7 @@ const createDeviceTypeSchema = z.object({
   name: z.string().min(2, 'Tên loại thiết bị tối thiểu 2 ký tự').max(100),
   description: z.string().max(2000).optional().nullable(),
   is_active: z.boolean().optional().default(true),
+  category_id: z.number().int().positive().optional().nullable(),
 });
 
 const createDistrictSchema = z.object({
