@@ -1,13 +1,12 @@
 import { useState } from 'react';
-import { Card, Steps, Button, Typography, Tag, Descriptions, Space, Spin, message, Modal, Divider, Timeline, Image, DatePicker } from 'antd';
+import { Card, Steps, Button, Typography, Tag, Descriptions, Space, Spin, message, Modal, Divider, Timeline, Image, DatePicker, Select, Alert } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { bookingApi, quotationApi } from '../../api/bookingApi';
 import { paymentApi } from '../../api/paymentApi';
 import { useParams, useNavigate } from 'react-router-dom';
-import { formatVND, formatDateTime, formatDate } from '../../utils/helpers';
-import { BOOKING_STATUS_STEPS, BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS, CUSTOMER_CANCELLABLE } from '../../utils/constants';
+import { formatVND, formatDateTime, formatDate, isBookingSlotAvailable } from '../../utils/helpers';
+import { BOOKING_STATUS_STEPS, BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS, CUSTOMER_CANCELLABLE, BOOKING_TIME_SLOTS } from '../../utils/constants';
 import { UserOutlined, PhoneOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
@@ -19,7 +18,8 @@ export default function BookingDetailPage() {
   const [isCancelling, setIsCancelling] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
-  const [rescheduleTime, setRescheduleTime] = useState(null);
+  const [rescheduleDate, setRescheduleDate] = useState(null);
+  const [rescheduleSlotValue, setRescheduleSlotValue] = useState(null);
   const [isRescheduling, setIsRescheduling] = useState(false);
 
   const { data: bookingData, isLoading, refetch } = useQuery({
@@ -99,21 +99,23 @@ export default function BookingDetailPage() {
   };
 
   const handleReschedule = async () => {
-    if (!rescheduleTime) {
-      message.warning('Vui lòng chọn thời gian mới');
+    const selectedSlot = BOOKING_TIME_SLOTS.find(slot => slot.value === rescheduleSlotValue);
+    if (!rescheduleDate || !selectedSlot) {
+      message.warning('Vui lòng chọn ngày và ca sửa chữa mới');
       return;
     }
 
     try {
       setIsRescheduling(true);
       await bookingApi.reschedule(id, {
-        booking_date: rescheduleTime.format('YYYY-MM-DD'),
-        time_slot_start: rescheduleTime.format('HH:mm'),
-        time_slot_end: rescheduleTime.add(2, 'hour').format('HH:mm'),
+        booking_date: rescheduleDate.format('YYYY-MM-DD'),
+        time_slot_start: selectedSlot.start,
+        time_slot_end: selectedSlot.end,
       });
       message.success('Đổi lịch thành công');
       setIsRescheduleOpen(false);
-      setRescheduleTime(null);
+      setRescheduleDate(null);
+      setRescheduleSlotValue(null);
       refetch();
     } catch (err) {
       message.error(err.message || 'Lỗi khi đổi lịch');
@@ -157,23 +159,49 @@ export default function BookingDetailPage() {
       <Modal
         title="Đổi lịch hẹn"
         open={isRescheduleOpen}
-        onCancel={() => setIsRescheduleOpen(false)}
+        onCancel={() => {
+          setIsRescheduleOpen(false);
+          setRescheduleDate(null);
+          setRescheduleSlotValue(null);
+        }}
         onOk={handleReschedule}
         okText="Xác nhận đổi lịch"
         cancelText="Quay lại"
         confirmLoading={isRescheduling}
       >
         <DatePicker
-          showTime
-          format="DD/MM/YYYY HH:mm"
+          format="DD/MM/YYYY"
           style={{ width: '100%' }}
-          value={rescheduleTime}
-          onChange={setRescheduleTime}
-          disabledDate={(current) => current && current < dayjs().add(24, 'hour').startOf('day')}
+          value={rescheduleDate}
+          onChange={(value) => {
+            setRescheduleDate(value);
+            setRescheduleSlotValue(null);
+          }}
+          placeholder="Chọn ngày sửa chữa mới"
+          disabledDate={(current) =>
+            current && BOOKING_TIME_SLOTS.every(
+              (slot) => !isBookingSlotAvailable(current, slot)
+            )
+          }
         />
-        <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
-          Hệ thống sẽ giữ ca làm 2 tiếng và kiểm tra lại điều kiện đặt trước tối thiểu 24 giờ.
-        </Text>
+        <Select
+          style={{ width: '100%', marginTop: 12 }}
+          value={rescheduleSlotValue}
+          onChange={setRescheduleSlotValue}
+          placeholder={rescheduleDate ? 'Chọn ca sửa chữa mới' : 'Chọn ngày trước'}
+          disabled={!rescheduleDate}
+          options={BOOKING_TIME_SLOTS.map((slot) => ({
+            value: slot.value,
+            label: slot.label,
+            disabled: !isBookingSlotAvailable(rescheduleDate, slot),
+          }))}
+        />
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginTop: 12 }}
+          message="Chỉ sử dụng ca 2 giờ và phải đổi lịch trước ít nhất 24 giờ."
+        />
       </Modal>
 
       <Card className="glass-card" style={{ marginBottom: 24 }}>
@@ -196,7 +224,9 @@ export default function BookingDetailPage() {
           <Card title="Thông tin dịch vụ" className="glass-card">
             <Descriptions column={1} labelStyle={{ fontWeight: 500, color: 'var(--text-secondary)', width: 150 }}>
               <Descriptions.Item label="Dịch vụ"><Text strong>{booking.service?.name}</Text></Descriptions.Item>
-              <Descriptions.Item label="Thời gian hẹn">{formatDate(booking.booking_date)} {booking.time_slot_start}</Descriptions.Item>
+              <Descriptions.Item label="Thời gian hẹn">
+                {formatDate(booking.booking_date)} {booking.time_slot_start} - {booking.time_slot_end}
+              </Descriptions.Item>
               <Descriptions.Item label="Mô tả sự cố">{booking.description}</Descriptions.Item>
               {booking.aiAnalyses?.[0]?.tech_summary && (
                 <Descriptions.Item label="AI Chẩn đoán">
