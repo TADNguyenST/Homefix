@@ -10,6 +10,7 @@ export const BOOKING_STATUS = {
   INSPECTING: 'INSPECTING',
   QUOTED: 'QUOTED',
   COMPLETING: 'COMPLETING',
+  AWAITING_PAYMENT: 'AWAITING_PAYMENT',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
 };
@@ -22,6 +23,7 @@ export const BOOKING_STATUS_LABELS = {
   INSPECTING: 'Đang khảo sát',
   QUOTED: 'Đã báo giá',
   COMPLETING: 'Đang sửa chữa',
+  AWAITING_PAYMENT: 'Chờ thanh toán',
   COMPLETED: 'Hoàn thành',
   CANCELLED: 'Đã hủy',
 };
@@ -34,6 +36,7 @@ export const BOOKING_STATUS_COLORS = {
   INSPECTING: { color: '#8b5cf6', bg: '#ede9fe' },
   QUOTED: { color: '#f97316', bg: '#ffedd5' },
   COMPLETING: { color: '#14b8a6', bg: '#ccfbf1' },
+  AWAITING_PAYMENT: { color: '#d97706', bg: '#fef3c7' },
   COMPLETED: { color: '#22c55e', bg: '#dcfce7' },
   CANCELLED: { color: '#ef4444', bg: '#fee2e2' },
 };
@@ -46,6 +49,7 @@ export const BOOKING_STATUS_STEPS = [
   BOOKING_STATUS.INSPECTING,
   BOOKING_STATUS.QUOTED,
   BOOKING_STATUS.COMPLETING,
+  BOOKING_STATUS.AWAITING_PAYMENT,
   BOOKING_STATUS.COMPLETED,
 ];
 

@@ -8,7 +8,7 @@ import { BOOKING_STATUS_LABELS } from '../../utils/constants';
 
 const { Title, Text } = Typography;
 
-const activeStatuses = ['ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING'];
+const activeStatuses = ['ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING', 'AWAITING_PAYMENT'];
 
 const getBadgeType = (status) => {
   if (status === 'COMPLETED') return 'success';

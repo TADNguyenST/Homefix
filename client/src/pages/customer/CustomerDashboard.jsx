@@ -20,7 +20,7 @@ export default function CustomerDashboard() {
 
   const bookings = bookingsData?.data || [];
 
-  const activeBookings = bookings.filter(b => ['PENDING', 'CONFIRMED', 'ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING'].includes(b.status));
+  const activeBookings = bookings.filter(b => ['PENDING', 'CONFIRMED', 'ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING', 'AWAITING_PAYMENT'].includes(b.status));
   const completedBookings = bookings.filter(b => b.status === 'COMPLETED');
   const totalSpent = completedBookings.filter(b => b.payment_status === 'PAID' || b.payment?.status === 'PAID').reduce((sum, b) => sum + (b.final_price || b.total_price || 0), 0);
 
