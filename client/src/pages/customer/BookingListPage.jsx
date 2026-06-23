@@ -1,4 +1,4 @@
-import { Table, Tag, Button, Typography, Select, DatePicker, Space } from 'antd';
+import { Table, Tag, Button, Select, DatePicker, Space } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { bookingApi } from '../../api/bookingApi';
@@ -7,7 +7,6 @@ import { useState } from 'react';
 import { formatVND, formatDateTime } from '../../utils/helpers';
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS, PAYMENT_STATUS_LABELS } from '../../utils/constants';
 
-const { Title } = Typography;
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 
@@ -51,7 +50,11 @@ export default function BookingListPage() {
       title: 'Tổng tiền',
       dataIndex: 'estimated_price',
       key: 'estimated_price',
-      render: (price) => <span style={{ fontWeight: 600, color: 'var(--orange)' }}>{formatVND(price)}</span>,
+      render: (price, record) => (
+        <span style={{ fontWeight: 600, color: 'var(--orange)' }}>
+          {formatVND(record.final_price || record.payment?.amount || price)}
+        </span>
+      ),
     },
     {
       title: 'Trạng thái',

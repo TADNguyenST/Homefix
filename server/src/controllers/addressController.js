@@ -94,7 +94,7 @@ const createAddress = async (req, res) => {
 const updateAddress = async (req, res) => {
   try {
     const addressId = parseInt(req.params.id);
-    const { district_id, ward_id, address_detail, label } = req.body;
+    const { district_id, ward_id, address_detail, label, is_default } = req.body;
 
     // Kiểm tra địa chỉ tồn tại và thuộc về user
     const existing = await prisma.customerAddress.findUnique({
@@ -116,18 +116,28 @@ const updateAddress = async (req, res) => {
       }
     }
 
-    const updated = await prisma.customerAddress.update({
-      where: { id: addressId },
-      data: {
-        ...(district_id !== undefined && { district_id }),
-        ...(ward_id !== undefined && { ward_id }),
-        ...(address_detail !== undefined && { address_detail }),
-        ...(label !== undefined && { label }),
-      },
-      include: {
-        district: { select: { id: true, name: true, type: true } },
-        ward: { select: { id: true, name: true, type: true } },
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      if (is_default === true) {
+        await tx.customerAddress.updateMany({
+          where: { customer_id: req.user.id, is_default: true },
+          data: { is_default: false },
+        });
+      }
+
+      return tx.customerAddress.update({
+        where: { id: addressId },
+        data: {
+          ...(district_id !== undefined && { district_id }),
+          ...(ward_id !== undefined && { ward_id }),
+          ...(address_detail !== undefined && { address_detail }),
+          ...(label !== undefined && { label }),
+          ...(is_default === true && { is_default: true }),
+        },
+        include: {
+          district: { select: { id: true, name: true, type: true } },
+          ward: { select: { id: true, name: true, type: true } },
+        },
+      });
     });
 
     return success(res, updated, 'Cập nhật địa chỉ thành công');

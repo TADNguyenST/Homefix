@@ -38,8 +38,8 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB max
 });
 
-// POST /api/upload — Upload single image (Admin only)
-router.post('/', authMiddleware, roleMiddleware(['ADMIN']), upload.single('image'), (req, res) => {
+// POST /api/upload — Upload single image for service images and booking evidence
+router.post('/', authMiddleware, roleMiddleware(['ADMIN', 'CUSTOMER', 'TECHNICIAN']), upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'Không có file nào được upload' });
   }

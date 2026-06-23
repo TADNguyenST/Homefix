@@ -64,6 +64,7 @@ const updateAddressSchema = z.object({
   ward_id: z.number().int().positive().optional(),
   address_detail: z.string().min(5).max(500).optional(),
   label: z.string().max(50).optional(),
+  is_default: z.boolean().optional(),
 });
 
 // ========================
@@ -83,6 +84,8 @@ const createBookingSchema = z.object({
   time_slot_end: z.string().regex(/^\d{2}:\d{2}$/, 'Giờ kết thúc format HH:mm'),
   payment_method: z.enum(['VNPAY', 'CASH'], { errorMap: () => ({ message: 'Phương thức: VNPAY hoặc CASH' }) }),
   voucher_code: z.string().optional().nullable(),
+  ai_diagnosis: z.string().max(2000).optional().nullable(),
+  image_urls: z.array(z.string().min(1).max(500)).max(3, 'Tối đa 3 ảnh cho mỗi booking').optional().default([]),
 });
 
 const rescheduleBookingSchema = z.object({
