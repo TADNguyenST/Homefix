@@ -22,6 +22,11 @@ const getTodayDateOnly = () => {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 };
 
+const isValidBookingSlot = (timeSlotStart, timeSlotEnd) =>
+  BUSINESS_RULES.BOOKING_TIME_SLOTS.some(
+    (slot) => slot.start === timeSlotStart && slot.end === timeSlotEnd
+  );
+
 // ========================
 // CREATE BOOKING — Khách hàng đặt lịch sửa chữa
 // ========================
@@ -95,13 +100,12 @@ const createBooking = async (req, res) => {
       return error(res, `Vui lòng đặt lịch trước ít nhất ${BUSINESS_RULES.MIN_BOOKING_ADVANCE_HOURS} giờ`, 400);
     }
 
-    // 5. Validate giờ trong ca làm việc
-    if (time_slot_start < BUSINESS_RULES.BOOKING_TIME_START || time_slot_end > BUSINESS_RULES.BOOKING_TIME_END) {
-      return error(res, `Giờ đặt lịch phải trong khoảng ${BUSINESS_RULES.BOOKING_TIME_START} - ${BUSINESS_RULES.BOOKING_TIME_END}`, 400);
-    }
-
-    if (time_slot_start >= time_slot_end) {
-      return error(res, 'Giờ bắt đầu phải trước giờ kết thúc', 400);
+    // 5. Chỉ nhận các ca chuẩn để tránh giờ lẻ, chồng ca và vượt giờ phục vụ.
+    if (!isValidBookingSlot(time_slot_start, time_slot_end)) {
+      const validSlots = BUSINESS_RULES.BOOKING_TIME_SLOTS
+        .map((slot) => `${slot.start} - ${slot.end}`)
+        .join(', ');
+      return error(res, `Ca làm việc không hợp lệ. Vui lòng chọn một trong các ca: ${validSlots}`, 400);
     }
 
     // 6. Xử lý voucher
@@ -452,12 +456,11 @@ const rescheduleBooking = async (req, res) => {
       return error(res, `Vui lòng đặt lịch trước ít nhất ${BUSINESS_RULES.MIN_BOOKING_ADVANCE_HOURS} giờ`, 400);
     }
 
-    if (time_slot_start < BUSINESS_RULES.BOOKING_TIME_START || time_slot_end > BUSINESS_RULES.BOOKING_TIME_END) {
-      return error(res, `Giờ đặt lịch phải trong khoảng ${BUSINESS_RULES.BOOKING_TIME_START} - ${BUSINESS_RULES.BOOKING_TIME_END}`, 400);
-    }
-
-    if (time_slot_start >= time_slot_end) {
-      return error(res, 'Giờ bắt đầu phải trước giờ kết thúc', 400);
+    if (!isValidBookingSlot(time_slot_start, time_slot_end)) {
+      const validSlots = BUSINESS_RULES.BOOKING_TIME_SLOTS
+        .map((slot) => `${slot.start} - ${slot.end}`)
+        .join(', ');
+      return error(res, `Ca làm việc không hợp lệ. Vui lòng chọn một trong các ca: ${validSlots}`, 400);
     }
 
     // Nếu đơn hàng đã được gán thợ, chúng ta cần gỡ thợ ra và đưa về trạng thái chờ phân công (CONFIRMED)

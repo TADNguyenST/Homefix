@@ -88,6 +88,12 @@ const BUSINESS_RULES = {
   MIN_BOOKING_ADVANCE_HOURS: 24,    // Đặt trước ít nhất 24h
   BOOKING_TIME_START: '08:00',       // Ca làm việc bắt đầu
   BOOKING_TIME_END: '18:00',         // Ca làm việc kết thúc
+  BOOKING_TIME_SLOTS: [
+    { start: '08:00', end: '10:00' },
+    { start: '10:00', end: '12:00' },
+    { start: '13:00', end: '15:00' },
+    { start: '15:00', end: '17:00' },
+  ],
   MIN_RATING: 1,
   MAX_RATING: 5,
   DEFAULT_PAGE_SIZE: 10,

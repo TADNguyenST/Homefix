@@ -89,3 +89,10 @@ export const ROLE_LABELS = {
 
 // Customer-cancellable statuses
 export const CUSTOMER_CANCELLABLE = ['PENDING', 'CONFIRMED'];
+
+export const BOOKING_TIME_SLOTS = [
+  { value: '08:00-10:00', start: '08:00', end: '10:00', label: '08:00 - 10:00' },
+  { value: '10:00-12:00', start: '10:00', end: '12:00', label: '10:00 - 12:00' },
+  { value: '13:00-15:00', start: '13:00', end: '15:00', label: '13:00 - 15:00' },
+  { value: '15:00-17:00', start: '15:00', end: '17:00', label: '15:00 - 17:00' },
+];
