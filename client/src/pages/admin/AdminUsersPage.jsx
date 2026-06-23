@@ -1,35 +1,56 @@
-import { Table, Tag, Button, Typography, Space, message, Modal } from 'antd';
+import { Table, Tag, Button, Typography, Space, message, Modal, Input, Select, Card } from 'antd';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { adminApi } from '../../api/adminApi';
 import { formatDateTime } from '../../utils/helpers';
+import { SearchOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
 
 const { Title } = Typography;
+const { Option } = Select;
 
 export default function AdminUsersPage() {
+  const [search, setSearch] = useState('');
+  const [isActiveFilter, setIsActiveFilter] = useState('all');
+  const [updatingUserId, setUpdatingUserId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
   const { data: usersData, isLoading, refetch } = useQuery({
-    queryKey: ['admin-users-list'],
-    queryFn: () => adminApi.getUsers(),
+    queryKey: ['admin-users-list', search, isActiveFilter, currentPage],
+    queryFn: () => adminApi.getUsers({
+      role: 'CUSTOMER',
+      search: search || undefined,
+      is_active: isActiveFilter === 'all' ? undefined : (isActiveFilter === 'active' ? 'true' : 'false'),
+      page: currentPage,
+      limit: pageSize,
+    }),
   });
 
-  const users = (usersData?.data || []).filter(u => u.role === 'CUSTOMER');
+  const users = usersData?.data || [];
+  const totalUsers = usersData?.pagination?.total || 0;
 
   const handleToggleLock = (user) => {
     const action = user.is_active ? 'Khóa' : 'Mở khóa';
     Modal.confirm({
       title: `Xác nhận ${action.toLowerCase()} tài khoản?`,
       content: `Bạn có chắc chắn muốn ${action.toLowerCase()} tài khoản ${user.email}?`,
+      okText: 'Xác nhận',
+      cancelText: 'Đóng',
+      okButtonProps: { danger: user.is_active },
       onOk: async () => {
         try {
+          setUpdatingUserId(user.id);
           if (user.is_active) {
             await adminApi.lockUser(user.id);
           } else {
             await adminApi.unlockUser(user.id);
           }
-          message.success(`Đã ${action.toLowerCase()} tài khoản`);
-          // Note: you might want to call refetch() from useQuery here if you extract it: const { data, refetch } = useQuery...
+          message.success(`Đã ${action.toLowerCase()} tài khoản thành công`);
           refetch();
         } catch (err) {
           message.error(err.message || `Lỗi khi ${action.toLowerCase()} tài khoản`);
+        } finally {
+          setUpdatingUserId(null);
         }
       }
     });
@@ -51,17 +72,13 @@ export default function AdminUsersPage() {
       title: 'Số điện thoại',
       dataIndex: 'phone',
       key: 'phone',
+      render: (text) => text || 'N/A',
     },
     {
       title: 'Vai trò',
       dataIndex: 'role',
       key: 'role',
-      render: (role) => {
-        let color = 'blue';
-        if (role === 'ADMIN') color = 'red';
-        if (role === 'TECHNICIAN') color = 'orange';
-        return <Tag color={color}>{role}</Tag>;
-      },
+      render: (role) => <Tag color="blue">{role}</Tag>,
     },
     {
       title: 'Ngày đăng ký',
@@ -89,6 +106,8 @@ export default function AdminUsersPage() {
               danger={record.is_active} 
               type={!record.is_active ? "primary" : "default"}
               size="small" 
+              icon={record.is_active ? <LockOutlined /> : <UnlockOutlined />}
+              loading={updatingUserId === record.id}
               onClick={() => handleToggleLock(record)}
             >
               {record.is_active ? 'Khóa' : 'Mở khóa'}
@@ -106,13 +125,48 @@ export default function AdminUsersPage() {
         <p>Danh sách tài khoản khách hàng trên hệ thống</p>
       </div>
 
+      <Card className="glass-card" style={{ marginBottom: 20 }}>
+        <Space wrap size="middle">
+          <Input
+            placeholder="Tìm theo tên, email..."
+            prefix={<SearchOutlined style={{ color: 'var(--text-secondary)' }} />}
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{ width: 280 }}
+            allowClear
+          />
+          <span style={{ color: 'var(--text-secondary)' }}>Trạng thái:</span>
+          <Select
+            value={isActiveFilter}
+            onChange={(value) => {
+              setIsActiveFilter(value);
+              setCurrentPage(1);
+            }}
+            style={{ width: 180 }}
+          >
+            <Option value="all">Tất cả</Option>
+            <Option value="active">Đang hoạt động</Option>
+            <Option value="locked">Đã khóa</Option>
+          </Select>
+        </Space>
+      </Card>
+
       <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
         <Table 
           columns={columns} 
           dataSource={users} 
           rowKey="id"
           loading={isLoading}
-          pagination={{ pageSize: 15 }}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            total: totalUsers,
+            onChange: (page) => setCurrentPage(page),
+            showSizeChanger: false,
+          }}
         />
       </div>
     </div>
