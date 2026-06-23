@@ -166,7 +166,10 @@ export default function ReviewPage() {
               <Rate
                 style={{ fontSize: 40, color: 'var(--orange)' }}
                 value={ratingVal}
-                onChange={(v) => setRatingVal(v)}
+                onChange={(value) => {
+                  setRatingVal(value);
+                  form.setFieldValue('rating', value);
+                }}
               />
               <div style={{ marginTop: 12, height: 20 }}>
                 <Text strong style={{ color: 'var(--orange-dark)', fontSize: 15 }}>

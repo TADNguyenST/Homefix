@@ -159,7 +159,7 @@ export default function CustomerVouchersPage() {
                         strokeWidth={6}
                       />
                       <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-                        Bạn còn: <Text strong style={{ color: 'var(--success)' }}>{remainingUses} lượt dùng</Text>
+                        Hệ thống còn: <Text strong style={{ color: 'var(--success)' }}>{remainingUses} lượt dùng</Text>
                       </Text>
                     </div>
                   </div>
