@@ -16,6 +16,7 @@ export default function AdminBookingsPage() {
   const [selectedTechId, setSelectedTechId] = useState(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [recommendedTechs, setRecommendedTechs] = useState([]);
+  const [recommendClicked, setRecommendClicked] = useState(false);
 
   const { data: bookingsData, isLoading, refetch } = useQuery({
     queryKey: ['admin-bookings'],
@@ -41,6 +42,7 @@ export default function AdminBookingsPage() {
     setSelectedBooking(booking);
     setSelectedTechId(booking.technician_profile_id || null);
     setRecommendedTechs([]);
+    setRecommendClicked(false);
     setAssignModalOpen(true);
   };
 
@@ -91,6 +93,7 @@ export default function AdminBookingsPage() {
   const recommendTech = async () => {
     try {
       setLoadingAction(true);
+      setRecommendClicked(true);
       const res = await adminApi.recommendTech(selectedBooking.id);
       const suggestions = res.data?.data?.technicians || res.data?.data || [];
       setRecommendedTechs(suggestions);
@@ -222,15 +225,57 @@ export default function AdminBookingsPage() {
           <Button icon={<RobotOutlined />} onClick={recommendTech} loading={loadingAction}>
             Gợi ý kỹ thuật viên bằng AI
           </Button>
-          {recommendedTechs.length > 0 && (
-            <div>
-              <Text strong>Gợi ý phù hợp:</Text>
-              <ul style={{ marginTop: 8 }}>
-                {recommendedTechs.slice(0, 5).map((tech) => (
-                  <li key={tech.id}>{tech.user?.full_name || tech.full_name || `Kỹ thuật viên #${tech.id}`}</li>
-                ))}
-              </ul>
-            </div>
+          {recommendClicked && (
+            recommendedTechs.length > 0 ? (
+              <div style={{ background: '#f5f7fa', padding: 12, borderRadius: 8, border: '1px solid #e8e8e8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 6 }}>
+                  <RobotOutlined style={{ color: '#1890ff', fontSize: 16 }} />
+                  <Text strong style={{ color: '#1890ff' }}>Đề xuất tốt nhất từ AI:</Text>
+                </div>
+                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                  {recommendedTechs.slice(0, 3).map((tech) => {
+                    const isSelected = selectedTechId === tech.id;
+                    return (
+                      <div
+                        key={tech.id}
+                        onClick={() => setSelectedTechId(tech.id)}
+                        style={{
+                          padding: '10px 12px',
+                          background: isSelected ? '#e6f7ff' : '#fff',
+                          border: isSelected ? '1px solid #1890ff' : '1px solid #f0f0f0',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 4
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: isSelected ? 700 : 600, color: isSelected ? '#0050b3' : 'inherit' }}>
+                            {tech.user?.full_name || `Kỹ thuật viên #${tech.id}`}
+                          </span>
+                          <Tag color={tech.ai_score >= 85 ? 'success' : 'processing'} style={{ margin: 0, fontWeight: 700 }}>
+                            {tech.ai_score}% phù hợp
+                          </Tag>
+                        </div>
+                        {tech.ai_reason && (
+                          <Text type="secondary" style={{ fontSize: 12, fontStyle: 'italic', marginTop: 2 }}>
+                            {tech.ai_reason}
+                          </Text>
+                        )}
+                      </div>
+                    );
+                  })}
+                </Space>
+              </div>
+            ) : (
+              <div style={{ background: '#fff2f0', padding: 12, borderRadius: 8, border: '1px solid #ffccc7' }}>
+                <Text type="danger" style={{ fontWeight: 600 }}>
+                  Không tìm thấy kỹ thuật viên nào phù hợp với yêu cầu của đơn hàng này.
+                </Text>
+              </div>
+            )
           )}
           <Select
             style={{ width: '100%' }}
