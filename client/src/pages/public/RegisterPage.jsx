@@ -100,7 +100,13 @@ export default function RegisterPage() {
 
           <Form.Item
             name="password"
-            rules={[{ required: true, message: 'Vui lòng nhập mật khẩu!', min: 6 }]}
+            rules={[
+              { required: true, message: 'Vui lòng nhập mật khẩu!' },
+              {
+                pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/,
+                message: 'Mật khẩu phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt',
+              },
+            ]}
           >
             <Input.Password prefix={<LockOutlined />} placeholder="Mật khẩu" />
           </Form.Item>

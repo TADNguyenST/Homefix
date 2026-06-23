@@ -127,7 +127,13 @@ export default function ForgotPasswordPage() {
           <Form layout="vertical" onFinish={handleResetPassword} size="large">
             <Form.Item
               name="new_password"
-              rules={[{ required: true, message: 'Vui lòng nhập mật khẩu mới!', min: 8 }]}
+              rules={[
+                { required: true, message: 'Vui lòng nhập mật khẩu mới!' },
+                {
+                  pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/,
+                  message: 'Mật khẩu phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt',
+                },
+              ]}
             >
               <Input.Password prefix={<LockOutlined />} placeholder="Mật khẩu mới" />
             </Form.Item>

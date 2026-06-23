@@ -1036,7 +1036,7 @@ const updateService = async (req, res) => {
 
 /**
  * DELETE /admin/services/:id
- * Hard delete: Xóa hẳn dịch vụ khỏi DB. Chặn nếu có booking đang active.
+ * Soft delete: ẩn dịch vụ để giữ nguyên lịch sử booking và báo cáo.
  */
 const deleteService = async (req, res) => {
   try {
@@ -1054,12 +1054,12 @@ const deleteService = async (req, res) => {
       return error(res, 'Không thể xóa dịch vụ đang có đơn hàng hoạt động', 400);
     }
 
-    // Xóa hẳn dịch vụ khỏi database
-    await prisma.service.delete({
+    const service = await prisma.service.update({
       where: { id: serviceId },
+      data: { is_active: false },
     });
-    
-    return success(res, null, 'Đã xóa dịch vụ vĩnh viễn thành công');
+
+    return success(res, service, 'Dịch vụ đã được ẩn');
   } catch (err) {
     console.error('deleteService error:', err);
     return error(res, 'Không thể xóa dịch vụ', 500);
