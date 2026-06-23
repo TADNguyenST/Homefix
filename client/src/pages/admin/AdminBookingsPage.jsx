@@ -194,6 +194,33 @@ export default function AdminBookingsPage() {
     },
   ];
 
+  const sortedTechnicians = [...technicians].sort((a, b) => {
+    if (!selectedBooking) return 0;
+    const aMatchSkill = a.skills?.some(s => s.service_id === selectedBooking.service_id) ? 1 : 0;
+    const bMatchSkill = b.skills?.some(s => s.service_id === selectedBooking.service_id) ? 1 : 0;
+    if (aMatchSkill !== bMatchSkill) return bMatchSkill - aMatchSkill;
+
+    const aMatchDistrict = (a.district_id === selectedBooking.district_id || !a.district_id) ? 1 : 0;
+    const bMatchDistrict = (b.district_id === selectedBooking.district_id || !b.district_id) ? 1 : 0;
+    if (aMatchDistrict !== bMatchDistrict) return bMatchDistrict - aMatchDistrict;
+
+    return (b.is_available ? 1 : 0) - (a.is_available ? 1 : 0);
+  });
+
+  const getTechOptionLabel = (tech) => {
+    if (!selectedBooking) return tech.user?.full_name || '';
+    const isMatchingSkill = tech.skills?.some(s => s.service_id === selectedBooking.service_id);
+    const isSameDistrict = tech.district_id === selectedBooking.district_id || !tech.district_id;
+    
+    let labels = [];
+    if (!isMatchingSkill) labels.push('Thiếu kỹ năng');
+    if (!isSameDistrict) labels.push('Khác quận');
+    if (!tech.is_available) labels.push('Bận');
+    
+    const statusText = labels.length > 0 ? ` [⚠️ ${labels.join(', ')}]` : ' [✓ Phù hợp]';
+    return `${tech.user?.full_name} - ${tech.district?.name || 'Toàn TP'} - ${Number(tech.avg_rating || 0).toFixed(1)} sao ${statusText}`;
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -285,9 +312,9 @@ export default function AdminBookingsPage() {
             showSearch
             optionFilterProp="children"
           >
-            {technicians.map((tech) => (
+            {sortedTechnicians.map((tech) => (
               <Option key={tech.id} value={tech.id}>
-                {tech.user?.full_name} - {tech.district?.name || 'Chưa có khu vực'} - {Number(tech.avg_rating || 0).toFixed(1)} sao
+                {getTechOptionLabel(tech)}
               </Option>
             ))}
           </Select>
