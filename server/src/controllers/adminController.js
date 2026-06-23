@@ -603,15 +603,32 @@ const unlockUser = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/technicians
+ * GET /admin/technicians (UC-67: View Technicians)
  * Danh sách kỹ thuật viên với profile, skills, rating.
+ * Filter: search (tên/email/sđt), district_id, is_available
  */
 const getTechnicians = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
+    const { search, district_id, is_available } = req.query;
+
+    // [UC-67] Xây dựng điều kiện filter
+    const where = {};
+    if (district_id) where.district_id = parseInt(district_id);
+    if (is_available !== undefined) where.is_available = is_available === 'true';
+    if (search) {
+      where.user = {
+        OR: [
+          { full_name: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search, mode: 'insensitive' } },
+        ],
+      };
+    }
 
     const [technicians, total] = await Promise.all([
       prisma.technicianProfile.findMany({
+        where,
         skip,
         take,
         orderBy: { created_at: 'desc' },
@@ -622,7 +639,7 @@ const getTechnicians = async (req, res) => {
           schedules: true,
         },
       }),
-      prisma.technicianProfile.count(),
+      prisma.technicianProfile.count({ where }),
     ]);
 
     return paginated(res, technicians, total, page, limit);
@@ -827,15 +844,24 @@ const updateTechnicianSchedule = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/categories
+ * GET /admin/categories (UC-73: View Categories)
  * Tất cả categories (bao gồm inactive), kèm số lượng service.
+ * Filter: search (tên), is_active
  */
 const getCategories = async (req, res) => {
   try {
+    const { search, is_active } = req.query;
+
+    // [UC-73] Xây dựng điều kiện filter
+    const where = {};
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (is_active !== undefined) where.is_active = is_active === 'true';
+
     const categories = await prisma.serviceCategory.findMany({
+      where,
       orderBy: { created_at: 'desc' },
       include: {
-        _count: { select: { services: true } },
+        _count: { select: { services: true, deviceTypes: true } },
       },
     });
     return success(res, categories);
@@ -927,15 +953,24 @@ const deleteCategory = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/services
+ * GET /admin/services (UC-77: View Services)
  * Tất cả services (bao gồm inactive), kèm tên category. Pagination.
+ * Filter: search (tên), category_id, is_active
  */
 const getServices = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
+    const { search, category_id, is_active } = req.query;
+
+    // [UC-77] Xây dựng điều kiện filter
+    const where = {};
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (category_id) where.category_id = parseInt(category_id);
+    if (is_active !== undefined) where.is_active = is_active === 'true';
 
     const [services, total] = await Promise.all([
       prisma.service.findMany({
+        where,
         skip,
         take,
         orderBy: { created_at: 'desc' },
@@ -943,7 +978,7 @@ const getServices = async (req, res) => {
           category: { select: { id: true, name: true } },
         },
       }),
-      prisma.service.count(),
+      prisma.service.count({ where }),
     ]);
 
     return paginated(res, services, total, page, limit);
@@ -1001,7 +1036,7 @@ const updateService = async (req, res) => {
 
 /**
  * DELETE /admin/services/:id
- * Soft delete: set is_active=false. Chặn nếu có booking đang active.
+ * Hard delete: Xóa hẳn dịch vụ khỏi DB. Chặn nếu có booking đang active.
  */
 const deleteService = async (req, res) => {
   try {
@@ -1019,11 +1054,12 @@ const deleteService = async (req, res) => {
       return error(res, 'Không thể xóa dịch vụ đang có đơn hàng hoạt động', 400);
     }
 
-    const service = await prisma.service.update({
+    // Xóa hẳn dịch vụ khỏi database
+    await prisma.service.delete({
       where: { id: serviceId },
-      data: { is_active: false },
     });
-    return success(res, service, 'Dịch vụ đã được ẩn');
+    
+    return success(res, null, 'Đã xóa dịch vụ vĩnh viễn thành công');
   } catch (err) {
     console.error('deleteService error:', err);
     return error(res, 'Không thể xóa dịch vụ', 500);
@@ -1035,11 +1071,20 @@ const deleteService = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/device-types
+ * GET /admin/device-types (UC-81: View Device Types)
+ * Filter: search (tên), category_id
  */
 const getDeviceTypes = async (req, res) => {
   try {
+    const { search, category_id } = req.query;
+
+    // [UC-81] Xây dựng điều kiện filter
+    const where = {};
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (category_id) where.category_id = parseInt(category_id);
+
     const deviceTypes = await prisma.deviceType.findMany({
+      where,
       orderBy: { created_at: 'desc' },
       include: {
         category: { select: { id: true, name: true } },
@@ -1120,12 +1165,21 @@ const deleteDeviceType = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/districts
+ * GET /admin/districts (UC-85: View Districts & Wards)
  * Tất cả districts với ward count và danh sách wards.
+ * Filter: search (tên), type
  */
 const getDistricts = async (req, res) => {
   try {
+    const { search, type } = req.query;
+
+    // [UC-85] Xây dựng điều kiện filter
+    const where = {};
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (type) where.type = type;
+
     const districts = await prisma.district.findMany({
+      where,
       orderBy: { name: 'asc' },
       include: {
         wards: { orderBy: { name: 'asc' } },
@@ -1522,21 +1576,38 @@ const resolveComplaint = async (req, res) => {
 };
 
 // ========================
-// DASHBOARD
+// DASHBOARD (UC-89: View Statistical Reports)
 // ========================
 
 /**
  * GET /admin/dashboard
- * Trả về các thống kê tổng hợp.
+ * Trả về các thống kê tổng hợp cho UC-89.
+ * Bổ sung: totalCustomers, totalTechnicians, complaintStats,
+ *          bookingTrend (30 ngày), revenueByDistrict
  */
 const getDashboard = async (req, res) => {
   try {
-    // Thống kê booking tổng quan
+    // === [UC-89] Thống kê booking tổng quan ===
     const [totalBookings, totalCompleted, totalCancelled] = await Promise.all([
       prisma.booking.count(),
       prisma.booking.count({ where: { status: BOOKING_STATUS.COMPLETED } }),
       prisma.booking.count({ where: { status: BOOKING_STATUS.CANCELLED } }),
     ]);
+
+    // === [UC-89] Tổng số khách hàng & kỹ thuật viên ===
+    const [totalCustomers, totalTechnicians, totalActiveTechnicians] = await Promise.all([
+      prisma.user.count({ where: { role: ROLES.CUSTOMER } }),
+      prisma.user.count({ where: { role: ROLES.TECHNICIAN } }),
+      prisma.technicianProfile.count({ where: { is_available: true } }),
+    ]);
+
+    // === [UC-89] Thống kê khiếu nại ===
+    const [totalComplaints, openComplaints, resolvedComplaints] = await Promise.all([
+      prisma.complaint.count(),
+      prisma.complaint.count({ where: { status: 'OPEN' } }),
+      prisma.complaint.count({ where: { status: 'RESOLVED' } }),
+    ]);
+    const complaintStats = { total: totalComplaints, open: openComplaints, resolved: resolvedComplaints };
 
     // Tổng doanh thu (sum of PAID payments)
     const revenueResult = await prisma.payment.aggregate({
@@ -1566,6 +1637,27 @@ const getDashboard = async (req, res) => {
       month: key,
       revenue: revenueMap[key]
     }));
+
+    // === [UC-89] Xu hướng booking 30 ngày gần nhất (daily trend) ===
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentAllBookings = await prisma.booking.findMany({
+      where: { created_at: { gte: thirtyDaysAgo } },
+      select: { created_at: true },
+    });
+    const trendMap = {};
+    recentAllBookings.forEach((b) => {
+      const key = b.created_at.toISOString().slice(0, 10); // YYYY-MM-DD
+      trendMap[key] = (trendMap[key] || 0) + 1;
+    });
+    // Điền đủ 30 ngày kể cả ngày không có đơn
+    const bookingTrend = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      bookingTrend.push({ date: key, count: trendMap[key] || 0 });
+    }
 
     // Top 5 services theo số lượng booking
     const topServicesRaw = await prisma.booking.groupBy({
@@ -1619,6 +1711,24 @@ const getDashboard = async (req, res) => {
       booking_count: b._count.id,
     }));
 
+    // === [UC-89] Doanh thu theo khu vực ===
+    const revenueByDistrictData = await prisma.payment.findMany({
+      where: { status: 'PAID' },
+      select: { amount: true, booking: { select: { district_id: true } } },
+    });
+    const districtRevenueMap = {};
+    revenueByDistrictData.forEach((p) => {
+      const dId = p.booking?.district_id;
+      if (dId) {
+        districtRevenueMap[dId] = (districtRevenueMap[dId] || 0) + Number(p.amount);
+      }
+    });
+    const revenueByDistrict = Object.entries(districtRevenueMap).map(([dId, revenue]) => ({
+      district_id: parseInt(dId),
+      district_name: districtNames.find((d) => d.id === parseInt(dId))?.name || 'N/A',
+      revenue,
+    }));
+
     // Thống kê phương thức thanh toán
     const paymentMethodStatsRaw = await prisma.payment.groupBy({
       by: ['method'],
@@ -1649,7 +1759,14 @@ const getDashboard = async (req, res) => {
       totalCompleted,
       totalCancelled,
       totalRevenue: Number(totalRevenue),
+      // [UC-89] Bổ sung thêm thống kê tổng quan
+      totalCustomers,
+      totalTechnicians,
+      totalActiveTechnicians,
+      complaintStats,
+      bookingTrend,
       revenueByMonth,
+      revenueByDistrict,
       topServices,
       topTechnicians,
       bookingsByStatus,

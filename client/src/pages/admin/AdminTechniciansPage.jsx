@@ -9,9 +9,17 @@ import dayjs from 'dayjs';
 const { Title } = Typography;
 
 export default function AdminTechniciansPage() {
+  const [search, setSearch] = useState('');
+  const [filterDistrict, setFilterDistrict] = useState(null);
+  const [filterStatus, setFilterStatus] = useState(null);
+
   const { data: techsData, isLoading, refetch } = useQuery({
-    queryKey: ['admin-technicians-list'],
-    queryFn: () => adminApi.getTechnicians(),
+    queryKey: ['admin-technicians-list', search, filterDistrict, filterStatus],
+    queryFn: () => adminApi.getTechnicians({
+      search,
+      district_id: filterDistrict,
+      is_available: filterStatus
+    }),
   });
 
   const { data: districtsData } = useQuery({
@@ -24,9 +32,10 @@ export default function AdminTechniciansPage() {
     queryFn: () => adminApi.getServices(),
   });
 
-  const technicians = techsData?.data || [];
+  // Handle paginated data from backend
+  const technicians = techsData?.data?.data || techsData?.data || [];
   const districts = districtsData?.data || [];
-  const services = servicesData?.data || [];
+  const services = servicesData?.data?.data || servicesData?.data || [];
 
   const [selectedTech, setSelectedTech] = useState(null);
   const [isDetailVisible, setIsDetailVisible] = useState(false);
@@ -159,8 +168,6 @@ export default function AdminTechniciansPage() {
     return days[dayIdx] || `Thứ ${dayIdx + 1}`;
   };
 
-  // Removed broken handleApprove and handleReject since TechnicianProfile has no approval status in DB.
-
   const columns = [
     {
       title: 'Họ và tên',
@@ -241,7 +248,7 @@ export default function AdminTechniciansPage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <Title level={2} style={{ color: 'var(--navy)', marginBottom: 8 }}>Quản lý Kỹ thuật viên</Title>
           <p>Kiểm duyệt và quản lý hồ sơ đối tác thợ sửa chữa</p>
@@ -252,6 +259,36 @@ export default function AdminTechniciansPage() {
       </div>
 
       <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
+        
+        {/* Lọc và Tìm kiếm */}
+        <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <Input.Search 
+            placeholder="Tìm theo tên, email, SĐT" 
+            allowClear 
+            onSearch={(value) => setSearch(value)}
+            style={{ width: 250 }}
+          />
+          <Select 
+            placeholder="Lọc theo khu vực" 
+            allowClear 
+            style={{ width: 200 }}
+            onChange={(val) => setFilterDistrict(val)}
+          >
+            {districts.map(d => (
+              <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>
+            ))}
+          </Select>
+          <Select 
+            placeholder="Lọc theo trạng thái" 
+            allowClear 
+            style={{ width: 180 }}
+            onChange={(val) => setFilterStatus(val)}
+          >
+            <Select.Option value={true}>Sẵn sàng nhận việc</Select.Option>
+            <Select.Option value={false}>Đang bận / Tạm nghỉ</Select.Option>
+          </Select>
+        </div>
+
         <Table 
           columns={columns} 
           dataSource={technicians} 
