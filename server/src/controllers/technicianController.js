@@ -284,7 +284,9 @@ const confirmCashPayment = async (req, res) => {
     const quotation = await prisma.quotation.findFirst({
       where: { booking_id: bookingId, status: QUOTATION_STATUS.ACCEPTED },
     });
-    const finalPrice = Number(booking.estimated_price) + (quotation ? Number(quotation.total_extra_price) : 0);
+    const finalPrice = booking.final_price !== null && booking.final_price !== undefined
+      ? Number(booking.final_price)
+      : (quotation ? Number(quotation.total_extra_price) : Number(booking.estimated_price));
 
     await completeBookingPayment({
       bookingId,

@@ -123,8 +123,8 @@ const acceptQuotation = async (req, res) => {
       return error(res, 'Đơn hàng không ở trạng thái chờ phản hồi báo giá', 400);
     }
 
-    // Cập nhật final_price = estimated_price + quotation total
-    const finalPrice = Number(quotation.booking.estimated_price) + Number(quotation.total_extra_price);
+    // total_extra_price là tổng báo giá cuối cùng vì form báo giá đã gồm phí cơ bản.
+    const finalPrice = Number(quotation.total_extra_price);
 
     await prisma.$transaction([
       prisma.quotation.update({

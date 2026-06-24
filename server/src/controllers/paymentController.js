@@ -82,7 +82,7 @@ const createVnpayUrl = async (req, res) => {
       const acceptedQuotation = await prisma.quotation.findFirst({
         where: { booking_id: bookingId, status: QUOTATION_STATUS.ACCEPTED },
       });
-      finalPrice = Number(booking.estimated_price) + (acceptedQuotation ? Number(acceptedQuotation.total_extra_price) : 0);
+      finalPrice = acceptedQuotation ? Number(acceptedQuotation.total_extra_price) : Number(booking.estimated_price);
     }
 
     // Cập nhật final_price vào booking
