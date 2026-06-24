@@ -293,7 +293,9 @@ const confirmCashPayment = async (req, res) => {
     const quotation = await prisma.quotation.findFirst({
       where: { booking_id: bookingId, status: QUOTATION_STATUS.ACCEPTED },
     });
-    const finalPrice = Number(booking.estimated_price) + (quotation ? Number(quotation.total_extra_price) : 0);
+    const finalPrice = booking.final_price !== null && booking.final_price !== undefined
+      ? Number(booking.final_price)
+      : (quotation ? Number(quotation.total_extra_price) : Number(booking.estimated_price));
 
     await prisma.$transaction([
       prisma.payment.update({
@@ -378,8 +380,13 @@ const getMyRating = async (req, res) => {
     });
     const reviews = await prisma.review.findMany({
       where: { technician_profile_id: profile.id },
-      select: { rating: true },
+      include: {
+        customer: { select: { full_name: true } },
+        booking: { select: { service: { select: { name: true } } } },
+      },
+      orderBy: { created_at: 'desc' },
     });
+
     const ratingBreakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     reviews.forEach((review) => { ratingBreakdown[review.rating] += 1; });
 
@@ -388,6 +395,7 @@ const getMyRating = async (req, res) => {
       total_completed_jobs: fullProfile.total_completed_jobs,
       total_reviews: reviews.length,
       rating_breakdown: ratingBreakdown,
+      reviews,
     });
   } catch (err) {
     console.error('Get my rating error:', err);

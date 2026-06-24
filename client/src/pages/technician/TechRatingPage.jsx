@@ -17,11 +17,9 @@ export default function TechRatingPage() {
     queryFn: () => technicianApi.getRating(),
   });
 
-  const reviews = ratingData?.data || [];
-  
-  const averageRating = reviews.length > 0 
-    ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1) 
-    : 0;
+  const reviews = ratingData?.data?.reviews || [];
+  const avgRating = ratingData?.data?.avg_rating || 0;
+  const averageRating = reviews.length > 0 ? Number(avgRating).toFixed(1) : 0;
 
   if (isLoading) return <div style={{ textAlign: 'center', padding: 50 }}><Spin size="large" /></div>;
 
@@ -35,7 +33,7 @@ export default function TechRatingPage() {
       <Card className="glass-card" style={{ marginBottom: 24, textAlign: 'center', padding: '20px 0' }}>
         <Title level={1} style={{ fontSize: 48, color: 'var(--orange)', margin: 0 }}>{averageRating}</Title>
         <Rate disabled value={Number(averageRating)} allowHalf style={{ fontSize: 24, margin: '8px 0' }} />
-        <div style={{ color: 'var(--text-secondary)' }}>Dựa trên {reviews.length} đánh giá</div>
+        <div style={{ color: 'var(--text-secondary)' }}>Dựa trên {ratingData?.data?.total_reviews || 0} đánh giá</div>
       </Card>
 
       <Card className="glass-card">
