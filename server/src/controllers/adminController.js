@@ -253,12 +253,15 @@ const assignTechnician = async (req, res) => {
     const techProfile = await prisma.technicianProfile.findUnique({
       where: { id: technician_profile_id },
       include: {
-        user: { select: { id: true, full_name: true } },
+        user: { select: { id: true, full_name: true, is_active: true, is_locked: true } },
         skills: true,
         schedules: true,
       },
     });
     if (!techProfile) return error(res, 'Kỹ thuật viên không tồn tại', 404);
+    if (!techProfile.user.is_active || techProfile.user.is_locked) {
+      return error(res, 'Tài khoản kỹ thuật viên chưa kích hoạt hoặc đã bị khóa', 400);
+    }
     if (!techProfile.is_available) return error(res, 'Kỹ thuật viên hiện không khả dụng', 400);
 
     if (techProfile.district_id && techProfile.district_id !== booking.district_id) {
@@ -365,12 +368,15 @@ const reassignTechnician = async (req, res) => {
     const newTechProfile = await prisma.technicianProfile.findUnique({
       where: { id: technician_profile_id },
       include: {
-        user: { select: { id: true, full_name: true } },
+        user: { select: { id: true, full_name: true, is_active: true, is_locked: true } },
         skills: true,
         schedules: true,
       },
     });
     if (!newTechProfile) return error(res, 'Kỹ thuật viên không tồn tại', 404);
+    if (!newTechProfile.user.is_active || newTechProfile.user.is_locked) {
+      return error(res, 'Tài khoản kỹ thuật viên chưa kích hoạt hoặc đã bị khóa', 400);
+    }
     if (!newTechProfile.is_available) return error(res, 'Kỹ thuật viên hiện không khả dụng', 400);
 
     if (newTechProfile.district_id && newTechProfile.district_id !== booking.district_id) {
@@ -695,10 +701,27 @@ const getTechnicians = async (req, res) => {
         take,
         orderBy: { created_at: 'desc' },
         include: {
-          user: { select: { id: true, email: true, full_name: true, phone: true, avatar_url: true, is_active: true } },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              full_name: true,
+              phone: true,
+              avatar_url: true,
+              is_active: true,
+              is_locked: true,
+            },
+          },
           district: { select: { id: true, name: true } },
           skills: { include: { service: { select: { id: true, name: true } } } },
           schedules: true,
+          _count: {
+            select: {
+              bookings: {
+                where: { status: { notIn: [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED] } },
+              },
+            },
+          },
         },
       }),
       prisma.technicianProfile.count({ where }),

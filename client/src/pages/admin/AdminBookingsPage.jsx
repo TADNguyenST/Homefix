@@ -35,7 +35,10 @@ export default function AdminBookingsPage() {
   });
 
   const bookings = bookingsData?.data || [];
-  const technicians = techsData?.data || [];
+  const technicianList = techsData?.data?.data || techsData?.data || [];
+  const technicians = technicianList.filter(
+    (tech) => tech.user?.is_active !== false && tech.user?.is_locked !== true
+  );
   const bookingDetail = detailData?.data || selectedBooking;
 
   const openAssign = (booking) => {

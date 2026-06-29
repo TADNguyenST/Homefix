@@ -325,6 +325,7 @@ const recommendTechnicians = async (bookingId) => {
   const technicians = await prisma.technicianProfile.findMany({
     where: {
       is_available: true,
+      user: { is_active: true, is_locked: false },
       OR: [
         { district_id: booking.district_id },
         { district_id: null },
