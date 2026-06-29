@@ -1,10 +1,10 @@
-import { Card, Typography, Tag, Space, Spin, Descriptions, Table, Timeline, Button, Divider, Row, Col, Avatar } from 'antd';
+import { Card, Typography, Tag, Space, Spin, Descriptions, Table, Timeline, Button, Divider, Row, Col, Avatar, Modal, message } from 'antd';
 import {
   ArrowLeftOutlined, UserOutlined, ToolOutlined, EnvironmentOutlined,
   WalletOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined,
-  CreditCardOutlined, CalendarOutlined
+  CalendarOutlined
 } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { adminApi } from '../../api/adminApi';
 import { formatVND, formatDateTime, formatDate } from '../../utils/helpers';
@@ -27,13 +27,38 @@ const BOOKING_STATUS_LABELS = {
   CANCELLED: 'Đã hủy',
 };
 
+const getSettlementConfig = (payment) => {
+  if (payment.method === 'VNPAY' && payment.status === 'PAID') {
+    return { label: 'HomeFix đã nhận qua VNPAY', color: 'cyan' };
+  }
+  if (payment.method !== 'CASH' || payment.status !== 'PAID') {
+    return { label: 'Chưa phát sinh đối soát', color: 'default' };
+  }
+  if (payment.settlement_status === 'SETTLED') {
+    return { label: 'Đã bàn giao cho HomeFix', color: 'success' };
+  }
+  return { label: 'Kỹ thuật viên đang giữ tiền', color: 'warning' };
+};
+
 export default function AdminPaymentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-payment-detail', id],
     queryFn: () => adminApi.getPaymentById(id),
+  });
+
+  const settlementMutation = useMutation({
+    mutationFn: () => adminApi.confirmCashSettlement(id),
+    onSuccess: () => {
+      message.success('Đã xác nhận HomeFix nhận đủ tiền mặt');
+      queryClient.invalidateQueries({ queryKey: ['admin-payment-detail', id] });
+      queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-dashboard'] });
+    },
+    onError: (err) => message.error(err.message || 'Không thể xác nhận bàn giao tiền mặt'),
   });
 
   const payment = data?.data;
@@ -59,6 +84,20 @@ export default function AdminPaymentDetailPage() {
   const technician = booking?.technicianProfile?.user;
   const statusCfg = PAYMENT_STATUS[payment.status] || { label: payment.status, color: 'default' };
   const acceptedQuotation = booking?.quotations?.[0];
+  const settlementCfg = getSettlementConfig(payment);
+  const canConfirmCashSettlement = payment.method === 'CASH'
+    && payment.status === 'PAID'
+    && payment.settlement_status === 'PENDING';
+
+  const handleConfirmCashSettlement = () => {
+    Modal.confirm({
+      title: 'Xác nhận đã nhận tiền mặt?',
+      content: `HomeFix xác nhận đã nhận đủ ${formatVND(payment.amount)} do kỹ thuật viên bàn giao. Thao tác này không thể thực hiện lại.`,
+      okText: 'Xác nhận đã nhận',
+      cancelText: 'Kiểm tra lại',
+      onOk: () => settlementMutation.mutateAsync(),
+    });
+  };
 
   const quotationColumns = [
     { title: 'Hạng mục', dataIndex: 'item_name', key: 'item_name' },
@@ -195,15 +234,9 @@ export default function AdminPaymentDetailPage() {
           {/* Price Breakdown */}
           <Card title="Chi tiết thanh toán" style={{ borderRadius: 16, marginBottom: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
-              <Text>Giá dịch vụ cơ bản</Text>
-              <Text strong>{formatVND(booking?.estimated_price || 0)}</Text>
+              <Text>{acceptedQuotation ? 'Tạm tính báo giá đã duyệt' : 'Giá dịch vụ dự kiến'}</Text>
+              <Text strong>{formatVND(acceptedQuotation?.total_extra_price || Number(booking?.estimated_price || 0) + Number(booking?.discount_amount || 0))}</Text>
             </div>
-            {acceptedQuotation && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
-                <Text>Phụ phí phát sinh (báo giá)</Text>
-                <Text strong>{formatVND(acceptedQuotation.total_extra_price)}</Text>
-              </div>
-            )}
             {booking?.discount_amount > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
                 <Text style={{ color: '#52c41a' }}>Giảm giá (voucher)</Text>
@@ -279,6 +312,51 @@ export default function AdminPaymentDetailPage() {
               </Space>
             </Card>
           )}
+
+          <Card title="Đối soát dòng tiền" style={{ borderRadius: 16, marginBottom: 20 }}>
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                <Text type="secondary">Tình trạng tiền</Text>
+                <Tag color={settlementCfg.color}>{settlementCfg.label}</Tag>
+              </div>
+              {payment.method === 'CASH' && payment.confirmer && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                  <Text type="secondary">Người thu từ khách</Text>
+                  <Text strong>{payment.confirmer.full_name}</Text>
+                </div>
+              )}
+              {payment.method === 'CASH' && payment.paid_at && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                  <Text type="secondary">Thu từ khách lúc</Text>
+                  <Text>{formatDateTime(payment.paid_at)}</Text>
+                </div>
+              )}
+              {payment.settlement_status === 'SETTLED' && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                    <Text type="secondary">Admin nhận tiền</Text>
+                    <Text strong>{payment.settler?.full_name || 'Admin'}</Text>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                    <Text type="secondary">Bàn giao lúc</Text>
+                    <Text>{payment.settled_at ? formatDateTime(payment.settled_at) : '---'}</Text>
+                  </div>
+                  {payment.settlement_note && <Text type="secondary">{payment.settlement_note}</Text>}
+                </>
+              )}
+              {canConfirmCashSettlement && (
+                <Button
+                  type="primary"
+                  block
+                  icon={<CheckCircleOutlined />}
+                  loading={settlementMutation.isPending}
+                  onClick={handleConfirmCashSettlement}
+                >
+                  Xác nhận HomeFix đã nhận tiền
+                </Button>
+              )}
+            </Space>
+          </Card>
 
           {/* Status History */}
           {booking?.statusHistories?.length > 0 && (

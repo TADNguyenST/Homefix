@@ -10,16 +10,21 @@ const { success, error, paginated } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { BOOKING_STATUS, PAYMENT_STATUS, QUOTATION_STATUS } = require('../config/constants');
 const { completeBookingPayment } = require('../services/paymentCompletionService');
+const { calculatePayableAmount } = require('../utils/pricing');
 
 // ========================
 // VNPAY CONFIG
 // ========================
 const VNPAY_CONFIG = {
+  enabled: process.env.VNPAY_ENABLE_REAL === 'true',
   vnp_TmnCode: process.env.VNPAY_TMN_CODE || '',
   vnp_HashSecret: process.env.VNPAY_SECRET_KEY || '',
   vnp_Url: process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
-  vnp_ReturnUrl: process.env.VNPAY_RETURN_URL || 'http://localhost:5173/payment/result',
+  vnp_ReturnUrl: process.env.VNPAY_RETURN_URL || 'http://localhost:5173/payment-result',
 };
+
+const isVnpayReady = () =>
+  VNPAY_CONFIG.enabled && VNPAY_CONFIG.vnp_TmnCode && VNPAY_CONFIG.vnp_HashSecret;
 
 /**
  * Sắp xếp object theo thứ tự alphabet của key (VNPAY yêu cầu)
@@ -77,12 +82,14 @@ const createVnpayUrl = async (req, res) => {
     }
 
     // 3. Tính final_price
-    let finalPrice = booking.final_price ? Number(booking.final_price) : 0;
+    let finalPrice = 0;
     if (!finalPrice) {
       const acceptedQuotation = await prisma.quotation.findFirst({
         where: { booking_id: bookingId, status: QUOTATION_STATUS.ACCEPTED },
       });
-      finalPrice = acceptedQuotation ? Number(acceptedQuotation.total_extra_price) : Number(booking.estimated_price);
+      finalPrice = acceptedQuotation
+        ? calculatePayableAmount(acceptedQuotation.total_extra_price, booking.discount_amount)
+        : Number(booking.final_price || booking.estimated_price || 0);
     }
 
     // Cập nhật final_price vào booking
@@ -91,8 +98,8 @@ const createVnpayUrl = async (req, res) => {
       data: { final_price: finalPrice },
     });
 
-    // 4. Kiểm tra VNPAY đã cấu hình chưa
-    if (!VNPAY_CONFIG.vnp_TmnCode || !VNPAY_CONFIG.vnp_HashSecret) {
+    // 4. Demo/dev mac dinh thanh toan mo phong. Chi redirect VNPAY khi bat co VNPAY_ENABLE_REAL=true.
+    if (!isVnpayReady()) {
       // === SIMULATE MODE: Không có key VNPAY → giả lập thanh toán thành công ===
       const vnpayTxnRef = `SIM_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
       const transactionCode = `TXN_${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
@@ -111,7 +118,7 @@ const createVnpayUrl = async (req, res) => {
         vnpay_txn_ref: vnpayTxnRef,
         transaction_code: transactionCode,
         amount: finalPrice,
-        message: 'VNPAY chưa cấu hình → Thanh toán mô phỏng thành công.',
+        message: 'VNPAY đang ở chế độ mô phỏng. Thanh toán đã được ghi nhận thành công.',
       }, 'Thanh toán thành công (mô phỏng)');
     }
 

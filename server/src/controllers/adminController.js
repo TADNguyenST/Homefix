@@ -15,7 +15,37 @@ const {
   NOTIFICATION_TYPE,
   BUSINESS_RULES,
   ROLES,
+  PAYMENT_METHOD,
+  PAYMENT_STATUS,
+  PAYMENT_SETTLEMENT_STATUS,
 } = require('../config/constants');
+
+const summarizePaidPayments = (payments) => payments.reduce((summary, payment) => {
+  const amount = Number(payment.amount || 0);
+  summary.total_revenue += amount;
+
+  if (payment.method === PAYMENT_METHOD.VNPAY) {
+    summary.vnpay_received += amount;
+    summary.homefix_received += amount;
+  } else if (payment.method === PAYMENT_METHOD.CASH) {
+    summary.cash_collected += amount;
+    if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.SETTLED) {
+      summary.cash_settled += amount;
+      summary.homefix_received += amount;
+    } else {
+      summary.cash_pending += amount;
+    }
+  }
+
+  return summary;
+}, {
+  total_revenue: 0,
+  homefix_received: 0,
+  vnpay_received: 0,
+  cash_collected: 0,
+  cash_pending: 0,
+  cash_settled: 0,
+});
 
 // ========================
 // BOOKING DISPATCH
@@ -1458,18 +1488,29 @@ const toggleVoucher = async (req, res) => {
 const getPayments = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
-    const { method, status: paymentStatus, date_from, date_to } = req.query;
+    const { method, status: paymentStatus, settlement_status, date_from, date_to } = req.query;
+
+    if (method && !Object.values(PAYMENT_METHOD).includes(method)) {
+      return error(res, 'Phương thức thanh toán không hợp lệ', 400);
+    }
+    if (paymentStatus && !Object.values(PAYMENT_STATUS).includes(paymentStatus)) {
+      return error(res, 'Trạng thái thanh toán không hợp lệ', 400);
+    }
+    if (settlement_status && !Object.values(PAYMENT_SETTLEMENT_STATUS).includes(settlement_status)) {
+      return error(res, 'Trạng thái đối soát không hợp lệ', 400);
+    }
 
     const where = {};
     if (method) where.method = method;
     if (paymentStatus) where.status = paymentStatus;
+    if (settlement_status) where.settlement_status = settlement_status;
     if (date_from || date_to) {
       where.created_at = {};
       if (date_from) where.created_at.gte = new Date(date_from);
       if (date_to) where.created_at.lte = new Date(date_to);
     }
 
-    const [payments, total] = await Promise.all([
+    const [payments, total, paidPayments] = await Promise.all([
       prisma.payment.findMany({
         where,
         skip,
@@ -1486,12 +1527,112 @@ const getPayments = async (req, res) => {
         },
       }),
       prisma.payment.count({ where }),
+      prisma.payment.findMany({
+        where: { status: PAYMENT_STATUS.PAID },
+        select: { amount: true, method: true, settlement_status: true },
+      }),
     ]);
 
-    return paginated(res, payments, total, page, limit);
+    return paginated(res, payments, total, page, limit, {
+      summary: summarizePaidPayments(paidPayments),
+    });
   } catch (err) {
     console.error('getPayments error:', err);
     return error(res, 'Không thể lấy danh sách thanh toán', 500);
+  }
+};
+
+/**
+ * PUT /admin/payments/:id/confirm-cash-settlement
+ * Admin xác nhận đã nhận đủ khoản tiền mặt mà kỹ thuật viên thu hộ.
+ */
+const confirmCashSettlement = async (req, res) => {
+  try {
+    const paymentId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(paymentId) || paymentId <= 0) {
+      return error(res, 'Mã giao dịch không hợp lệ', 400);
+    }
+
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+    if (note.length > 500) {
+      return error(res, 'Ghi chú đối soát không được vượt quá 500 ký tự', 400);
+    }
+
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            technicianProfile: { select: { user_id: true } },
+          },
+        },
+      },
+    });
+
+    if (!payment) return error(res, 'Không tìm thấy giao dịch', 404);
+    if (payment.method !== PAYMENT_METHOD.CASH) {
+      return error(res, 'Chỉ đối soát bàn giao đối với thanh toán tiền mặt', 400);
+    }
+    if (payment.status !== PAYMENT_STATUS.PAID) {
+      return error(res, 'Khách hàng chưa thanh toán nên chưa thể đối soát', 400);
+    }
+    if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.SETTLED) {
+      return error(res, 'Khoản tiền mặt này đã được đối soát trước đó', 409);
+    }
+    if (payment.settlement_status !== PAYMENT_SETTLEMENT_STATUS.PENDING) {
+      return error(res, 'Khoản tiền mặt chưa ở trạng thái chờ bàn giao', 400);
+    }
+
+    const settledAt = new Date();
+    const updateResult = await prisma.payment.updateMany({
+      where: {
+        id: paymentId,
+        method: PAYMENT_METHOD.CASH,
+        status: PAYMENT_STATUS.PAID,
+        settlement_status: PAYMENT_SETTLEMENT_STATUS.PENDING,
+      },
+      data: {
+        settlement_status: PAYMENT_SETTLEMENT_STATUS.SETTLED,
+        settled_at: settledAt,
+        settled_by: req.user.id,
+        settlement_note: note || 'Admin xác nhận đã nhận đủ tiền mặt từ kỹ thuật viên',
+      },
+    });
+
+    if (updateResult.count !== 1) {
+      return error(res, 'Giao dịch vừa được đối soát bởi một Admin khác', 409);
+    }
+
+    const technicianUserId = payment.booking?.technicianProfile?.user_id;
+    if (technicianUserId) {
+      try {
+        await prisma.notification.create({
+          data: {
+            user_id: technicianUserId,
+            title: 'Đã đối soát tiền mặt',
+            message: `HomeFix đã xác nhận nhận đủ ${Number(payment.amount).toLocaleString('vi-VN')}đ của đơn #${payment.booking_id}.`,
+            type: NOTIFICATION_TYPE.PAYMENT,
+            reference_id: payment.booking_id,
+          },
+        });
+      } catch (notificationError) {
+        console.error('Cash settlement notification error:', notificationError);
+      }
+    }
+
+    const updatedPayment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        confirmer: { select: { id: true, full_name: true } },
+        settler: { select: { id: true, full_name: true } },
+      },
+    });
+
+    return success(res, updatedPayment, 'Xác nhận bàn giao tiền mặt thành công');
+  } catch (err) {
+    console.error('confirmCashSettlement error:', err);
+    return error(res, 'Không thể xác nhận bàn giao tiền mặt', 500);
   }
 };
 
@@ -1621,7 +1762,7 @@ const getDashboard = async (req, res) => {
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const paidPayments = await prisma.payment.findMany({
       where: { status: 'PAID', paid_at: { gte: sixMonthsAgo } },
-      select: { amount: true, paid_at: true },
+      select: { amount: true, paid_at: true, method: true, settlement_status: true },
     });
     // Nhóm theo tháng
     const revenueMap = {};
@@ -1732,6 +1873,7 @@ const getDashboard = async (req, res) => {
     // Thống kê phương thức thanh toán
     const paymentMethodStatsRaw = await prisma.payment.groupBy({
       by: ['method'],
+      where: { status: PAYMENT_STATUS.PAID },
       _count: { id: true },
       _sum: { amount: true },
     });
@@ -1759,6 +1901,10 @@ const getDashboard = async (req, res) => {
       totalCompleted,
       totalCancelled,
       totalRevenue: Number(totalRevenue),
+      revenueSummary: summarizePaidPayments(await prisma.payment.findMany({
+        where: { status: PAYMENT_STATUS.PAID },
+        select: { amount: true, method: true, settlement_status: true },
+      })),
       // [UC-89] Bổ sung thêm thống kê tổng quan
       totalCustomers,
       totalTechnicians,
@@ -1816,6 +1962,7 @@ const getPaymentDetail = async (req, res) => {
           },
         },
         confirmer: { select: { id: true, full_name: true } },
+        settler: { select: { id: true, full_name: true } },
       },
     });
 
@@ -1888,7 +2035,7 @@ module.exports = {
   // Voucher CRUD
   getVouchers, createVoucher, updateVoucher, toggleVoucher, getVoucherUsages,
   // Payment & Complaint
-  getPayments, getPaymentDetail, getComplaints, resolveComplaint,
+  getPayments, getPaymentDetail, confirmCashSettlement, getComplaints, resolveComplaint,
   // Dashboard
   getDashboard,
 };

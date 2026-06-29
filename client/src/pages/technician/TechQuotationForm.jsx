@@ -1,12 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Card, Form, Input, Button, Typography, Space, message, InputNumber, Row, Col, Table, Divider, Spin } from 'antd';
-import { PlusOutlined, DeleteOutlined, SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { technicianApi } from '../../api/technicianApi';
 import { formatVND } from '../../utils/helpers';
 
 const { Title, Text, Paragraph } = Typography;
+
+const toNumber = (value) => {
+  const normalized = typeof value === 'string' ? value.replace(/,/g, '').trim() : value;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function TechQuotationForm() {
   const { id } = useParams();
@@ -25,17 +31,23 @@ export default function TechQuotationForm() {
   // Add initial base service fee
   useEffect(() => {
     if (job && job.service && items.length === 0) {
+      const bookedBasePrice = toNumber(job.estimated_price) + toNumber(job.discount_amount);
       setItems([{
         key: Date.now().toString(),
         item_name: `Phí cơ bản - ${job.service.name}`,
         quantity: 1,
-        unit_price: job.service.base_price,
+        unit_price: bookedBasePrice || toNumber(job.service.base_price),
       }]);
     }
-  }, [job]);
+  }, [job, items.length]);
 
   const handleAddItem = (values) => {
-    setItems([...items, { ...values, key: Date.now().toString() }]);
+    setItems([...items, {
+      key: Date.now().toString(),
+      item_name: values.item_name.trim(),
+      quantity: toNumber(values.quantity),
+      unit_price: toNumber(values.unit_price),
+    }]);
     form.resetFields();
   };
 
@@ -54,8 +66,8 @@ export default function TechQuotationForm() {
       const payload = {
         items: items.map(item => ({
           item_name: item.item_name,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
+          quantity: toNumber(item.quantity),
+          unit_price: toNumber(item.unit_price),
         }))
       };
       await technicianApi.createQuotation(id, payload);
@@ -68,7 +80,7 @@ export default function TechQuotationForm() {
     }
   };
 
-  const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+  const totalAmount = items.reduce((sum, item) => sum + (toNumber(item.quantity) * toNumber(item.unit_price)), 0);
 
   const columns = [
     {
@@ -87,13 +99,13 @@ export default function TechQuotationForm() {
       title: 'Đơn giá',
       dataIndex: 'unit_price',
       key: 'unit_price',
-      render: (price) => formatVND(price),
+      render: (price) => formatVND(toNumber(price)),
       width: 150,
     },
     {
       title: 'Thành tiền',
       key: 'total',
-      render: (_, record) => <Text strong>{formatVND(record.quantity * record.unit_price)}</Text>,
+      render: (_, record) => <Text strong>{formatVND(toNumber(record.quantity) * toNumber(record.unit_price))}</Text>,
       width: 150,
     },
     {
@@ -146,7 +158,13 @@ export default function TechQuotationForm() {
                 <InputNumber min={1} style={{ width: '100%' }} />
               </Form.Item>
               <Form.Item name="unit_price" label="Đơn giá (VNĐ)" rules={[{ required: true }]}>
-                <InputNumber min={0} step={10000} style={{ width: '100%' }} formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
+                <InputNumber
+                  min={0}
+                  step={10000}
+                  style={{ width: '100%' }}
+                  formatter={value => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                  parser={value => value?.replace(/,/g, '') ?? ''}
+                />
               </Form.Item>
               <Form.Item>
                 <Button type="dashed" htmlType="submit" block icon={<PlusOutlined />}>

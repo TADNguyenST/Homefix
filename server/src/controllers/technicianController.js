@@ -12,6 +12,7 @@ const {
   notifyAwaitingPayment,
 } = require('../services/notificationService');
 const { completeBookingPayment } = require('../services/paymentCompletionService');
+const { calculatePayableAmount } = require('../utils/pricing');
 
 const getMyProfile = async (userId, include = {}) => {
   return prisma.technicianProfile.findUnique({
@@ -284,15 +285,16 @@ const confirmCashPayment = async (req, res) => {
     const quotation = await prisma.quotation.findFirst({
       where: { booking_id: bookingId, status: QUOTATION_STATUS.ACCEPTED },
     });
-    const finalPrice = booking.final_price !== null && booking.final_price !== undefined
-      ? Number(booking.final_price)
-      : (quotation ? Number(quotation.total_extra_price) : Number(booking.estimated_price));
+    const finalPrice = quotation
+      ? calculatePayableAmount(quotation.total_extra_price, booking.discount_amount)
+      : Number(booking.final_price || booking.estimated_price || 0);
 
     await completeBookingPayment({
       bookingId,
       amount: finalPrice,
       changedBy: req.user.id,
       confirmedBy: req.user.id,
+      transactionCode: `CASH_HF${bookingId}_${Date.now()}`,
     });
     return success(res, null, `Xac nhan thu tien mat ${finalPrice.toLocaleString('vi-VN')}d thanh cong`);
   } catch (err) {

@@ -11,6 +11,14 @@ const TEMP_EMAIL_DOMAINS = [
   'dispostable.com', 'temp-mail.org'
 ];
 
+const numericInput = (schema) => z.preprocess((value) => {
+  if (typeof value === 'string') {
+    const normalized = value.replace(/,/g, '').trim();
+    return normalized === '' ? undefined : Number(normalized);
+  }
+  return value;
+}, schema);
+
 // ========================
 // AUTH
 // ========================
@@ -126,8 +134,8 @@ const createQuotationSchema = z.object({
   note: z.string().max(2000).optional().nullable(),
   items: z.array(z.object({
     item_name: z.string().min(1, 'Tên hạng mục không được trống').max(200),
-    quantity: z.number().int().min(1, 'Số lượng tối thiểu 1').default(1),
-    unit_price: z.number().min(0, 'Đơn giá không được âm'),
+    quantity: numericInput(z.number().int().min(1, 'Số lượng tối thiểu 1').default(1)),
+    unit_price: numericInput(z.number().min(0, 'Đơn giá không được âm')),
   })).min(1, 'Phải có ít nhất 1 hạng mục báo giá'),
 });
 

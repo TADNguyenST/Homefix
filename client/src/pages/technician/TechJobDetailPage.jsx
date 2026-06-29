@@ -3,12 +3,16 @@ import { Card, Steps, Button, Typography, Tag, Descriptions, Space, Spin, messag
 import { EnvironmentOutlined, PhoneOutlined, UserOutlined, FormOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { technicianApi } from '../../api/technicianApi';
-import { bookingApi } from '../../api/bookingApi'; // fallback or shared
 import { useParams, useNavigate } from 'react-router-dom';
 import { formatVND, formatDate, formatDateTime } from '../../utils/helpers';
 import { BOOKING_STATUS_STEPS, BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS } from '../../utils/constants';
 
 const { Title, Text } = Typography;
+
+const toNumber = (value) => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function TechJobDetailPage() {
   const { id } = useParams();
@@ -30,6 +34,16 @@ export default function TechJobDetailPage() {
 
   const currentStepIndex = BOOKING_STATUS_STEPS.indexOf(job.status);
   const colorCfg = BOOKING_STATUS_COLORS[job.status] || { color: '#000', bg: '#eee' };
+  const currentQuotation = job.quotations?.find(q => q.status === 'PENDING')
+    || job.quotations?.find(q => q.status === 'ACCEPTED')
+    || job.quotations?.[0];
+  const quotationSubtotal = currentQuotation
+    ? toNumber(currentQuotation.total_extra_price)
+    : toNumber(job.final_price ?? job.payment?.amount ?? job.estimated_price);
+  const discountAmount = currentQuotation ? toNumber(job.discount_amount) : 0;
+  const payableAmount = currentQuotation
+    ? Math.max(0, quotationSubtotal - discountAmount)
+    : toNumber(job.final_price ?? job.payment?.amount ?? job.estimated_price);
 
   const handleUpdateStatus = async (newStatus) => {
     try {
@@ -47,7 +61,7 @@ export default function TechJobDetailPage() {
   const handleConfirmCash = () => {
     Modal.confirm({
       title: 'Xác nhận thu tiền mặt?',
-      content: `Bạn xác nhận đã thu đủ số tiền ${formatVND(Number(job.final_price || job.estimated_price || 0))} từ khách hàng?`,
+      content: `Bạn xác nhận đã thu đủ số tiền ${formatVND(payableAmount)} từ khách hàng?`,
       onOk: async () => {
         try {
           await technicianApi.confirmCash(id);
@@ -198,8 +212,18 @@ export default function TechJobDetailPage() {
           {['QUOTED', 'COMPLETING', 'AWAITING_PAYMENT', 'COMPLETED'].includes(job.status) && (
             <Card title="Báo giá & Thanh toán" className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <Text>Tổng tiền dịch vụ và vật tư:</Text>
-                <Title level={4} style={{ color: 'var(--orange)', margin: 0 }}>{formatVND(Number(job.final_price || job.estimated_price || 0))}</Title>
+                <Text>Tạm tính báo giá:</Text>
+                <Text strong>{formatVND(quotationSubtotal)}</Text>
+              </div>
+              {discountAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <Text type="success">Giảm giá voucher:</Text>
+                  <Text strong style={{ color: 'var(--success)' }}>- {formatVND(discountAmount)}</Text>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                <Text>Khách cần thanh toán:</Text>
+                <Title level={4} style={{ color: 'var(--orange)', margin: 0 }}>{formatVND(payableAmount)}</Title>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                 <Text>Hình thức thanh toán:</Text>
@@ -211,6 +235,16 @@ export default function TechJobDetailPage() {
                   {job.payment?.status === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}
                 </Tag>
               </div>
+              {job.payment_method === 'CASH' && job.payment?.status === 'PAID' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
+                  <Text>Trạng thái bàn giao:</Text>
+                  <Tag color={job.payment?.settlement_status === 'SETTLED' ? 'success' : 'warning'}>
+                    {job.payment?.settlement_status === 'SETTLED'
+                      ? 'HomeFix đã nhận tiền'
+                      : 'Chờ bàn giao cho HomeFix'}
+                  </Tag>
+                </div>
+              )}
             </Card>
           )}
         </Space>

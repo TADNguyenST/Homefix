@@ -62,6 +62,7 @@ export const adminApi = {
   // Payments
   getPayments: (params) => axiosClient.get('/admin/payments', { params }),
   getPaymentById: (id) => axiosClient.get(`/admin/payments/${id}`),
+  confirmCashSettlement: (id, data = {}) => axiosClient.put(`/admin/payments/${id}/confirm-cash-settlement`, data),
 
   // Complaints
   getComplaints: (params) => axiosClient.get('/admin/complaints', { params }),

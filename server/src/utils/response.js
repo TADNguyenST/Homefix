@@ -37,7 +37,7 @@ const error = (res, message = 'Something went wrong', statusCode = 400, errors =
  * @param {number} page - Trang hiện tại
  * @param {number} limit - Số bản ghi mỗi trang
  */
-const paginated = (res, data, total, page, limit) => {
+const paginated = (res, data, total, page, limit, metadata = {}) => {
   return res.status(200).json({
     success: true,
     data,
@@ -47,6 +47,7 @@ const paginated = (res, data, total, page, limit) => {
       total,
       totalPages: Math.ceil(total / limit),
     },
+    ...metadata,
   });
 };
 

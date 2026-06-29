@@ -11,6 +11,10 @@ import { UserOutlined, PhoneOutlined, SafetyCertificateOutlined } from '@ant-des
 const { Title, Text } = Typography;
 const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
 const resolveImageUrl = (url) => (url?.startsWith('http') ? url : `${API_ORIGIN}${url}`);
+const toNumber = (value) => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function BookingDetailPage() {
   const { id } = useParams();
@@ -45,6 +49,11 @@ export default function BookingDetailPage() {
   const currentQuotation = quotations.find(q => q.status === 'PENDING')
     || quotations.find(q => q.status === 'ACCEPTED')
     || quotations[0];
+  const quotationSubtotal = currentQuotation ? toNumber(currentQuotation.total_extra_price) : 0;
+  const quotationDiscount = currentQuotation ? toNumber(booking.discount_amount) : 0;
+  const quotationPayable = currentQuotation
+    ? Math.max(0, quotationSubtotal - quotationDiscount)
+    : toNumber(booking.final_price ?? booking.payment?.amount ?? booking.estimated_price);
   const timelineItems = [...(booking.statusHistories || [])]
     .reverse()
     .map(item => ({
@@ -241,8 +250,18 @@ export default function BookingDetailPage() {
           {currentQuotation && (
             <Card title="Báo giá chi tiết" className="glass-card" extra={<Button type="link" onClick={() => navigate(`/customer/quotations/${currentQuotation.id}`)}>Xem chi tiết</Button>}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <Text>Tổng tiền dịch vụ và vật tư:</Text>
-                <Title level={4} style={{ color: 'var(--orange)', margin: 0 }}>{formatVND(currentQuotation.total_extra_price)}</Title>
+                <Text>Tạm tính báo giá:</Text>
+                <Text strong>{formatVND(quotationSubtotal)}</Text>
+              </div>
+              {quotationDiscount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <Text type="success">Giảm giá voucher:</Text>
+                  <Text strong style={{ color: 'var(--success)' }}>- {formatVND(quotationDiscount)}</Text>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                <Text>Khách cần thanh toán:</Text>
+                <Title level={4} style={{ color: 'var(--orange)', margin: 0 }}>{formatVND(quotationPayable)}</Title>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Text>Trạng thái báo giá:</Text>
@@ -268,6 +287,17 @@ export default function BookingDetailPage() {
             description={booking.payment_method === 'VNPAY'
               ? 'Vui lòng thanh toán VNPAY để hoàn tất đơn hàng.'
               : 'Vui lòng thanh toán tiền mặt cho kỹ thuật viên. Đơn sẽ hoàn tất sau khi kỹ thuật viên xác nhận đã thu tiền.'}
+          />
+        )}
+        {booking.status === 'COMPLETED' && booking.payment?.status === 'PAID' && (
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginTop: 20 }}
+            message="Thanh toán đã được ghi nhận"
+            description={booking.payment_method === 'VNPAY'
+              ? `HomeFix đã nhận thanh toán qua VNPAY${booking.payment.transaction_code ? `, mã giao dịch ${booking.payment.transaction_code}` : ''}.`
+              : `Kỹ thuật viên đã xác nhận thu đủ ${formatVND(booking.payment.amount)} tiền mặt${booking.payment.transaction_code ? `, mã biên nhận ${booking.payment.transaction_code}` : ''}.`}
           />
         )}
           {booking.images?.length > 0 && (

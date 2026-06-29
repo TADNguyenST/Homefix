@@ -1,8 +1,9 @@
-import { Row, Col, Card, Typography, Statistic, Spin, Table, Tag, Space, Divider } from 'antd';
+import { Row, Col, Card, Typography, Statistic, Spin, Table, Tag } from 'antd';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import {
-  CalendarOutlined, WalletOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  ExclamationCircleOutlined, TeamOutlined, UsergroupAddOutlined, MessageOutlined
+  CalendarOutlined, WalletOutlined, CheckCircleOutlined,
+  ExclamationCircleOutlined, TeamOutlined, UsergroupAddOutlined,
+  CreditCardOutlined
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
@@ -121,6 +122,39 @@ export default function AdminDashboard() {
               prefix={<TeamOutlined style={{ color: '#8b5cf6' }} />}
               valueStyle={{ fontSize: 24, fontWeight: 700, marginTop: 8 }}
               suffix={<span style={{ fontSize: 14, color: 'var(--text-secondary)' }}> ({stats.totalActiveTechnicians || 0} đang ON)</span>}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+        <Col xs={24} md={8}>
+          <Card className="glass-card" style={{ height: '100%', borderLeft: '4px solid #1677ff' }}>
+            <Statistic
+              title="VNPAY HomeFix đã nhận"
+              value={formatVND(stats.revenueSummary?.vnpay_received || 0)}
+              prefix={<CreditCardOutlined style={{ color: '#1677ff' }} />}
+              valueStyle={{ fontSize: 20, fontWeight: 700 }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} md={8}>
+          <Card className="glass-card" style={{ height: '100%', borderLeft: '4px solid #fa8c16' }}>
+            <Statistic
+              title="Tiền mặt kỹ thuật viên đang giữ"
+              value={formatVND(stats.revenueSummary?.cash_pending || 0)}
+              prefix={<ExclamationCircleOutlined style={{ color: '#fa8c16' }} />}
+              valueStyle={{ fontSize: 20, fontWeight: 700, color: '#fa8c16' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} md={8}>
+          <Card className="glass-card" style={{ height: '100%', borderLeft: '4px solid #52c41a' }}>
+            <Statistic
+              title="Tiền mặt đã bàn giao HomeFix"
+              value={formatVND(stats.revenueSummary?.cash_settled || 0)}
+              prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+              valueStyle={{ fontSize: 20, fontWeight: 700, color: '#52c41a' }}
             />
           </Card>
         </Col>

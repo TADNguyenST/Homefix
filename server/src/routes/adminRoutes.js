@@ -109,6 +109,7 @@ router.get('/vouchers/:id/usages', admin.getVoucherUsages);
 // ========================
 router.get('/payments', admin.getPayments);
 router.get('/payments/:id', admin.getPaymentDetail);
+router.put('/payments/:id/confirm-cash-settlement', admin.confirmCashSettlement);
 router.get('/complaints', admin.getComplaints);
 router.put('/complaints/:id/resolve', validate(resolveComplaintSchema), admin.resolveComplaint);
 

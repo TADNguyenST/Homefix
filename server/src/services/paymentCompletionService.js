@@ -1,5 +1,10 @@
 const prisma = require('../utils/prisma');
-const { BOOKING_STATUS, PAYMENT_STATUS } = require('../config/constants');
+const {
+  BOOKING_STATUS,
+  PAYMENT_METHOD,
+  PAYMENT_STATUS,
+  PAYMENT_SETTLEMENT_STATUS,
+} = require('../config/constants');
 const {
   notifyPaymentSuccess,
   notifyBookingCompleted,
@@ -44,6 +49,12 @@ const completeBookingPayment = async ({
         paid_at: new Date(),
         confirmed_by: confirmedBy,
         transaction_code: transactionCode,
+        settlement_status: payment.method === PAYMENT_METHOD.CASH
+          ? PAYMENT_SETTLEMENT_STATUS.PENDING
+          : PAYMENT_SETTLEMENT_STATUS.NOT_REQUIRED,
+        settled_at: null,
+        settled_by: null,
+        settlement_note: null,
         ...(vnpayTxnRef !== undefined && { vnpay_txn_ref: vnpayTxnRef }),
         ...(vnpayResponseCode !== undefined && { vnpay_response_code: vnpayResponseCode }),
         failed_reason: null,

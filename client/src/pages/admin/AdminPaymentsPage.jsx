@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Table, Tag, Typography, Card, Row, Col, Statistic, Select, Space, Button, Input, DatePicker } from 'antd';
+import { Table, Tag, Typography, Card, Row, Col, Statistic, Select, Space, Button } from 'antd';
 import {
-  WalletOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined,
-  SearchOutlined, EyeOutlined, FilterOutlined
+  WalletOutlined, CheckCircleOutlined, ClockCircleOutlined,
+  EyeOutlined, FilterOutlined, CreditCardOutlined
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -11,7 +11,6 @@ import { formatVND, formatDateTime } from '../../utils/helpers';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
-const { RangePicker } = DatePicker;
 
 const PAYMENT_STATUS = {
   PAID:    { label: 'Đã thanh toán', color: 'success' },
@@ -25,23 +24,36 @@ const PAYMENT_METHOD = {
   VNPAY: { label: 'VNPAY',    color: 'cyan' },
 };
 
+const getSettlementConfig = (payment) => {
+  if (payment.method === 'VNPAY' && payment.status === 'PAID') {
+    return { label: 'HomeFix nhận qua VNPAY', color: 'cyan' };
+  }
+  if (payment.method !== 'CASH' || payment.status !== 'PAID') {
+    return { label: 'Chưa phát sinh', color: 'default' };
+  }
+  if (payment.settlement_status === 'SETTLED') {
+    return { label: 'Đã bàn giao HomeFix', color: 'success' };
+  }
+  return { label: 'Kỹ thuật viên đang giữ', color: 'warning' };
+};
+
 export default function AdminPaymentsPage() {
   const navigate = useNavigate();
-  const [filters, setFilters] = useState({ method: undefined, status: undefined });
+  const [filters, setFilters] = useState({
+    method: undefined,
+    status: undefined,
+    settlement_status: undefined,
+    page: 1,
+    limit: 12,
+  });
 
   const { data: paymentsData, isLoading } = useQuery({
     queryKey: ['admin-payments', filters],
     queryFn: () => adminApi.getPayments(filters),
   });
 
-  const payments = paymentsData?.data?.data || paymentsData?.data || [];
-
-  const totalPaidAmount = payments
-    .filter(p => p.status === 'PAID')
-    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
-  const paidCount    = payments.filter(p => p.status === 'PAID').length;
-  const pendingCount = payments.filter(p => p.status === 'PENDING').length;
-  const unpaidCount  = payments.filter(p => ['UNPAID', 'FAILED'].includes(p.status)).length;
+  const payments = Array.isArray(paymentsData?.data) ? paymentsData.data : [];
+  const summary = paymentsData?.summary || {};
 
   const columns = [
     {
@@ -103,6 +115,14 @@ export default function AdminPaymentsPage() {
       },
     },
     {
+      title: 'Dòng tiền',
+      key: 'settlement_status',
+      render: (_, record) => {
+        const cfg = getSettlementConfig(record);
+        return <Tag color={cfg.color}>{cfg.label}</Tag>;
+      },
+    },
+    {
       title: 'Thời gian',
       dataIndex: 'created_at',
       key: 'created_at',
@@ -136,8 +156,8 @@ export default function AdminPaymentsPage() {
         <Col xs={24} sm={12} lg={6}>
           <Card style={{ borderRadius: 12, borderLeft: '4px solid var(--orange)' }}>
             <Statistic
-              title="Doanh thu (đã thanh toán)"
-              value={formatVND(totalPaidAmount)}
+              title="Tổng doanh thu đã thanh toán"
+              value={formatVND(summary.total_revenue || 0)}
               prefix={<WalletOutlined style={{ color: 'var(--orange)' }} />}
               valueStyle={{ fontSize: 18, fontWeight: 700, color: 'var(--orange)' }}
             />
@@ -146,9 +166,8 @@ export default function AdminPaymentsPage() {
         <Col xs={24} sm={12} lg={6}>
           <Card style={{ borderRadius: 12, borderLeft: '4px solid #52c41a' }}>
             <Statistic
-              title="Đã thanh toán"
-              value={paidCount}
-              suffix="giao dịch"
+              title="HomeFix đã thực nhận"
+              value={formatVND(summary.homefix_received || 0)}
               prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
               valueStyle={{ fontSize: 18, fontWeight: 700, color: '#52c41a' }}
             />
@@ -157,10 +176,9 @@ export default function AdminPaymentsPage() {
         <Col xs={24} sm={12} lg={6}>
           <Card style={{ borderRadius: 12, borderLeft: '4px solid #1677ff' }}>
             <Statistic
-              title="Đang xử lý"
-              value={pendingCount}
-              suffix="giao dịch"
-              prefix={<ClockCircleOutlined style={{ color: '#1677ff' }} />}
+              title="VNPAY đã nhận"
+              value={formatVND(summary.vnpay_received || 0)}
+              prefix={<CreditCardOutlined style={{ color: '#1677ff' }} />}
               valueStyle={{ fontSize: 18, fontWeight: 700, color: '#1677ff' }}
             />
           </Card>
@@ -168,11 +186,10 @@ export default function AdminPaymentsPage() {
         <Col xs={24} sm={12} lg={6}>
           <Card style={{ borderRadius: 12, borderLeft: '4px solid #ff4d4f' }}>
             <Statistic
-              title="Chưa thanh toán / lỗi"
-              value={unpaidCount}
-              suffix="giao dịch"
-              prefix={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
-              valueStyle={{ fontSize: 18, fontWeight: 700, color: '#ff4d4f' }}
+              title="Tiền mặt chờ bàn giao"
+              value={formatVND(summary.cash_pending || 0)}
+              prefix={<ClockCircleOutlined style={{ color: '#fa8c16' }} />}
+              valueStyle={{ fontSize: 18, fontWeight: 700, color: '#fa8c16' }}
             />
           </Card>
         </Col>
@@ -185,7 +202,7 @@ export default function AdminPaymentsPage() {
             allowClear
             placeholder="Phương thức"
             style={{ width: 140 }}
-            onChange={(val) => setFilters(f => ({ ...f, method: val }))}
+            onChange={(val) => setFilters(f => ({ ...f, method: val, page: 1 }))}
             suffixIcon={<FilterOutlined />}
           >
             <Option value="CASH">Tiền mặt</Option>
@@ -195,11 +212,20 @@ export default function AdminPaymentsPage() {
             allowClear
             placeholder="Trạng thái"
             style={{ width: 160 }}
-            onChange={(val) => setFilters(f => ({ ...f, status: val }))}
+            onChange={(val) => setFilters(f => ({ ...f, status: val, page: 1 }))}
           >
             {Object.entries(PAYMENT_STATUS).map(([key, val]) => (
               <Option key={key} value={key}>{val.label}</Option>
             ))}
+          </Select>
+          <Select
+            allowClear
+            placeholder="Đối soát tiền mặt"
+            style={{ width: 190 }}
+            onChange={(val) => setFilters(f => ({ ...f, settlement_status: val, page: 1 }))}
+          >
+            <Option value="PENDING">Chờ bàn giao</Option>
+            <Option value="SETTLED">Đã bàn giao</Option>
           </Select>
         </Space>
 
@@ -208,7 +234,14 @@ export default function AdminPaymentsPage() {
           dataSource={payments}
           rowKey="id"
           loading={isLoading}
-          pagination={{ pageSize: 12, showTotal: (total) => `Tổng ${total} giao dịch` }}
+          pagination={{
+            current: filters.page,
+            pageSize: filters.limit,
+            total: paymentsData?.pagination?.total || 0,
+            showSizeChanger: false,
+            showTotal: (total) => `Tổng ${total} giao dịch`,
+            onChange: (page) => setFilters(f => ({ ...f, page })),
+          }}
           onRow={(record) => ({
             onClick: () => navigate(`/admin/payments/${record.id}`),
             style: { cursor: 'pointer' },

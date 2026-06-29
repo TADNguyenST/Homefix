@@ -7,6 +7,7 @@ const prisma = require('../utils/prisma');
 const { success, error } = require('../utils/response');
 const { QUOTATION_STATUS, BOOKING_STATUS } = require('../config/constants');
 const { notifyQuotationResponse } = require('../services/notificationService');
+const { calculatePayableAmount } = require('../utils/pricing');
 
 // ========================
 // VIEW QUOTATION DETAIL — Xem chi tiết 1 báo giá
@@ -102,6 +103,7 @@ const acceptQuotation = async (req, res) => {
             status: true,
             technician_profile_id: true,
             estimated_price: true,
+            discount_amount: true,
           },
         },
       },
@@ -123,8 +125,8 @@ const acceptQuotation = async (req, res) => {
       return error(res, 'Đơn hàng không ở trạng thái chờ phản hồi báo giá', 400);
     }
 
-    // total_extra_price là tổng báo giá cuối cùng vì form báo giá đã gồm phí cơ bản.
-    const finalPrice = Number(quotation.total_extra_price);
+    // total_extra_price là tạm tính báo giá; voucher của booking được trừ một lần vào số cuối.
+    const finalPrice = calculatePayableAmount(quotation.total_extra_price, quotation.booking.discount_amount);
 
     await prisma.$transaction([
       prisma.quotation.update({
