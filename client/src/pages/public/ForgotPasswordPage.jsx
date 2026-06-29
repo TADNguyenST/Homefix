@@ -2,7 +2,7 @@ import { Form, Input, Button, Card, Typography, message, Steps } from 'antd';
 import { MailOutlined, LockOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { authApi } from '../../api/authApi';
 
 const { Title, Text } = Typography;
@@ -13,6 +13,17 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    let timer;
+    if (currentStep === 1 && countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [currentStep, countdown]);
 
   const handleVerifyOtpLocal = (values) => {
     setOtpCode(values.otp_code);
@@ -26,6 +37,7 @@ export default function ForgotPasswordPage() {
       setLoading(true);
       await authApi.forgotPassword({ email });
       message.success('Đã gửi lại mã OTP. Vui lòng kiểm tra email!');
+      setCountdown(60);
     } catch (err) {
       message.error(err.response?.data?.message || err.message || 'Gửi lại mã thất bại');
     } finally {
@@ -39,6 +51,7 @@ export default function ForgotPasswordPage() {
       await authApi.forgotPassword(values);
       setEmail(values.email);
       message.success('Mã OTP đã được gửi đến email của bạn');
+      setCountdown(60);
       setCurrentStep(1);
     } catch (err) {
       message.error(err.message || 'Lỗi gửi yêu cầu');
@@ -115,8 +128,8 @@ export default function ForgotPasswordPage() {
                 <Button type="primary" htmlType="submit" style={{ flex: 1 }} loading={loading}>
                   Tiếp tục
                 </Button>
-                <Button onClick={handleResendOtp} disabled={loading}>
-                  Gửi lại mã
+                <Button onClick={handleResendOtp} disabled={loading || countdown > 0}>
+                  {countdown > 0 ? `Gửi lại mã (${countdown}s)` : 'Gửi lại mã'}
                 </Button>
               </div>
             </Form.Item>

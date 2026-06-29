@@ -3,7 +3,7 @@ import { UserOutlined, LockOutlined, MailOutlined, PhoneOutlined } from '@ant-de
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { authApi } from '../../api/authApi';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -15,14 +15,26 @@ export default function RegisterPage() {
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const [form] = Form.useForm();
   const [otpForm] = Form.useForm();
+
+  useEffect(() => {
+    let timer;
+    if (otpModalVisible && countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [otpModalVisible, countdown]);
 
   const onFinish = async (values) => {
     try {
       setLoading(true);
       await register(values);
       setRegisteredEmail(values.email);
+      setCountdown(60);
       setOtpModalVisible(true);
       message.success('Đăng ký thành công! Vui lòng kiểm tra email để lấy mã OTP.');
     } catch (err) {
@@ -51,6 +63,7 @@ export default function RegisterPage() {
       setOtpLoading(true);
       await authApi.resendOtp({ email: registeredEmail });
       message.success('Đã gửi lại mã OTP. Vui lòng kiểm tra email!');
+      setCountdown(60);
     } catch (err) {
       message.error(err.response?.data?.message || err.message || 'Gửi lại mã thất bại');
     } finally {
@@ -165,8 +178,8 @@ export default function RegisterPage() {
             <Button type="primary" htmlType="submit" style={{ flex: 1 }} loading={otpLoading} size="large">
               Xác nhận
             </Button>
-            <Button onClick={handleResendOtp} disabled={otpLoading} size="large">
-              Gửi lại mã
+            <Button onClick={handleResendOtp} disabled={otpLoading || countdown > 0} size="large">
+              {countdown > 0 ? `Gửi lại mã (${countdown}s)` : 'Gửi lại mã'}
             </Button>
           </div>
         </Form>
