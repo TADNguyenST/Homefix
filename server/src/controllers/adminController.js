@@ -9,6 +9,7 @@ const bcrypt = require('bcrypt');
 const prisma = require('../utils/prisma');
 const { success, error, paginated } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
+const activeSessions = require('../utils/sessionStore');
 const {
   BOOKING_STATUS,
   ADMIN_CANCELLABLE_STATUSES,
@@ -558,11 +559,12 @@ const cancelBooking = async (req, res) => {
 const getUsers = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
-    const { role, is_active, search } = req.query;
+    const { role, is_active, is_locked, search } = req.query;
 
     const where = {};
     if (role) where.role = role;
     if (is_active !== undefined) where.is_active = is_active === 'true';
+    if (is_locked !== undefined) where.is_locked = is_locked === 'true';
     if (search) {
       where.OR = [
         { full_name: { contains: search, mode: 'insensitive' } },
@@ -578,7 +580,7 @@ const getUsers = async (req, res) => {
         orderBy: { created_at: 'desc' },
         select: {
           id: true, email: true, full_name: true, role: true,
-          phone: true, avatar_url: true, is_active: true,
+          phone: true, avatar_url: true, is_active: true, is_locked: true,
           created_at: true, updated_at: true,
         },
       }),
@@ -597,20 +599,29 @@ const getUsers = async (req, res) => {
  */
 const lockUser = async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const userToLock = await prisma.user.findUnique({ where: { id: parseInt(id) } });
-    if (!userToLock) return error(res, 'Không tìm thấy tài khoản', 404);
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return error(res, 'Mã tài khoản không hợp lệ', 400);
+    }
+    if (userId === req.user.id) {
+      return error(res, 'Admin không thể tự khóa tài khoản của mình', 400);
+    }
 
-    const newHash = userToLock.password_hash.startsWith('BANNED:') 
-      ? userToLock.password_hash 
-      : `BANNED:${userToLock.password_hash}`;
+    const userToLock = await prisma.user.findUnique({ where: { id: userId } });
+    if (!userToLock) return error(res, 'Không tìm thấy tài khoản', 404);
+    if (userToLock.role === ROLES.ADMIN) {
+      return error(res, 'Không thể khóa tài khoản Admin bằng chức năng này', 403);
+    }
+    if (userToLock.is_locked) {
+      return error(res, 'Tài khoản đã bị khóa trước đó', 409);
+    }
 
     const user = await prisma.user.update({
-      where: { id: parseInt(id) },
-      data: { is_active: false, password_hash: newHash },
-      select: { id: true, email: true, full_name: true, is_active: true },
+      where: { id: userId },
+      data: { is_locked: true },
+      select: { id: true, email: true, full_name: true, is_active: true, is_locked: true },
     });
+    activeSessions.delete(userId);
     return success(res, user, 'Khóa tài khoản thành công');
   } catch (err) {
     console.error('lockUser error:', err);
@@ -623,19 +634,24 @@ const lockUser = async (req, res) => {
  */
 const unlockUser = async (req, res) => {
   try {
-    const { id } = req.params;
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return error(res, 'Mã tài khoản không hợp lệ', 400);
+    }
 
-    const userToUnlock = await prisma.user.findUnique({ where: { id: parseInt(id) } });
+    const userToUnlock = await prisma.user.findUnique({ where: { id: userId } });
     if (!userToUnlock) return error(res, 'Không tìm thấy tài khoản', 404);
-
-    const newHash = userToUnlock.password_hash.startsWith('BANNED:') 
-      ? userToUnlock.password_hash.replace('BANNED:', '') 
-      : userToUnlock.password_hash;
+    if (userToUnlock.role === ROLES.ADMIN) {
+      return error(res, 'Không thể thay đổi trạng thái khóa của Admin bằng chức năng này', 403);
+    }
+    if (!userToUnlock.is_locked) {
+      return error(res, 'Tài khoản hiện không bị khóa', 409);
+    }
 
     const user = await prisma.user.update({
-      where: { id: parseInt(id) },
-      data: { is_active: true, password_hash: newHash },
-      select: { id: true, email: true, full_name: true, is_active: true },
+      where: { id: userId },
+      data: { is_locked: false },
+      select: { id: true, email: true, full_name: true, is_active: true, is_locked: true },
     });
     return success(res, user, 'Mở khóa tài khoản thành công');
   } catch (err) {

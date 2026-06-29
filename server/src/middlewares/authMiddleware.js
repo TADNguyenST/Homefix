@@ -18,10 +18,10 @@ const authMiddleware = async (req, res, next) => {
     // Kiểm tra user còn active không (phòng trường hợp bị lock sau khi JWT đã cấp)
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      select: { id: true, role: true, email: true, is_active: true },
+      select: { id: true, role: true, email: true, is_active: true, is_locked: true },
     });
 
-    if (!user || !user.is_active) {
+    if (!user || !user.is_active || user.is_locked) {
       return res.status(403).json({ success: false, error: 'Tài khoản đã bị vô hiệu hóa.' });
     }
 

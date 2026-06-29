@@ -1,7 +1,6 @@
 import { Form, Input, Button, Card, Typography, message, Steps } from 'antd';
 import { MailOutlined, LockOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
 import { useState, useEffect } from 'react';
 import { authApi } from '../../api/authApi';
 
@@ -30,8 +29,6 @@ export default function ForgotPasswordPage() {
     setCurrentStep(2);
   };
   
-  const [form] = Form.useForm();
-
   const handleResendOtp = async () => {
     try {
       setLoading(true);

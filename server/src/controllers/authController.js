@@ -14,28 +14,26 @@ const register = async (req, res) => {
     // Check Email
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      if (existingUser.password_hash.startsWith('BANNED:')) {
-        return error(res, 'Tài khoản của bạn đã bị Admin khóa vĩnh viễn.', 403);
+      if (existingUser.is_locked) {
+        return error(res, 'Tài khoản gắn với email này đã bị Admin khóa.', 403);
       }
       if (!existingUser.is_active) {
-        await prisma.user.delete({ where: { id: existingUser.id } });
-      } else {
-        return error(res, 'Email đã được đăng ký', 409);
+        return error(res, 'Email đã được đăng ký nhưng chưa xác thực. Vui lòng dùng chức năng "Gửi lại OTP".', 409);
       }
+      return error(res, 'Email đã được đăng ký', 409);
     }
 
     // Check sdt
     if (phone) {
       const existingPhone = await prisma.user.findFirst({ where: { phone } });
       if (existingPhone) {
-        if (existingPhone.password_hash.startsWith('BANNED:')) {
-          return error(res, 'Số điện thoại này thuộc về tài khoản đã bị khóa vĩnh viễn.', 403);
+        if (existingPhone.is_locked) {
+          return error(res, 'Số điện thoại này thuộc về tài khoản đã bị Admin khóa.', 403);
         }
         if (!existingPhone.is_active) {
-          await prisma.user.delete({ where: { id: existingPhone.id } });
-        } else {
-          return error(res, 'Số điện thoại đã được đăng ký', 409);
+          return error(res, 'Số điện thoại đã được liên kết với một tài khoản chưa xác thực.', 409);
         }
+        return error(res, 'Số điện thoại đã được đăng ký', 409);
       }
     }
 
@@ -94,6 +92,10 @@ const verifyOtp = async (req, res) => {
       return error(res, 'Email không tồn tại trong hệ thống', 404);
     }
 
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa, không thể xác thực OTP.', 403);
+    }
+
     // Nếu đã active rồi thì không cần verify nữa
     if (user.is_active) {
       return error(res, 'Tài khoản đã được kích hoạt trước đó', 400);
@@ -146,6 +148,10 @@ const resendOtp = async (req, res) => {
       return error(res, 'Email không tồn tại trong hệ thống', 404);
     }
 
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa, không thể gửi lại OTP.', 403);
+    }
+
     if (user.is_active) {
       return error(res, 'Tài khoản đã được kích hoạt, không cần gửi lại OTP', 400);
     }
@@ -195,8 +201,8 @@ const login = async (req, res) => {
       return error(res, 'Email hoặc mật khẩu không đúng', 401);
     }
 
-    if (user.password_hash.startsWith('BANNED:')) {
-      return error(res, 'Tài khoản của bạn đã bị Admin khóa vĩnh viễn.', 403);
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa.', 403);
     }
 
     // Check đã Active
@@ -247,8 +253,8 @@ const forgotPassword = async (req, res) => {
       return success(res, null, 'Nếu email tồn tại, chúng tôi đã gửi mã OTP. Vui lòng kiểm tra hộp thư.');
     }
 
-    if (user.password_hash.startsWith('BANNED:')) {
-      return error(res, 'Tài khoản của bạn đã bị khóa vĩnh viễn, không thể thao tác.', 403);
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa, không thể đặt lại mật khẩu.', 403);
     }
 
     if (!user.is_active) {
@@ -297,6 +303,10 @@ const resetPassword = async (req, res) => {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return error(res, 'Thông tin không hợp lệ', 400);
+    }
+
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa, không thể đặt lại mật khẩu.', 403);
     }
 
     // Tìm OTP hợp lệ

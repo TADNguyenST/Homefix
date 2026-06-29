@@ -10,17 +10,22 @@ const { Option } = Select;
 
 export default function AdminUsersPage() {
   const [search, setSearch] = useState('');
-  const [isActiveFilter, setIsActiveFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [updatingUserId, setUpdatingUserId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
 
   const { data: usersData, isLoading, refetch } = useQuery({
-    queryKey: ['admin-users-list', search, isActiveFilter, currentPage],
+    queryKey: ['admin-users-list', search, statusFilter, currentPage],
     queryFn: () => adminApi.getUsers({
       role: 'CUSTOMER',
       search: search || undefined,
-      is_active: isActiveFilter === 'all' ? undefined : (isActiveFilter === 'active' ? 'true' : 'false'),
+      is_active: statusFilter === 'active'
+        ? 'true'
+        : statusFilter === 'unverified' ? 'false' : undefined,
+      is_locked: statusFilter === 'locked'
+        ? 'true'
+        : statusFilter === 'active' || statusFilter === 'unverified' ? 'false' : undefined,
       page: currentPage,
       limit: pageSize,
     }),
@@ -30,20 +35,20 @@ export default function AdminUsersPage() {
   const totalUsers = usersData?.pagination?.total || 0;
 
   const handleToggleLock = (user) => {
-    const action = user.is_active ? 'Khóa' : 'Mở khóa';
+    const action = user.is_locked ? 'Mở khóa' : 'Khóa';
     Modal.confirm({
       title: `Xác nhận ${action.toLowerCase()} tài khoản?`,
       content: `Bạn có chắc chắn muốn ${action.toLowerCase()} tài khoản ${user.email}?`,
       okText: 'Xác nhận',
       cancelText: 'Đóng',
-      okButtonProps: { danger: user.is_active },
+      okButtonProps: { danger: !user.is_locked },
       onOk: async () => {
         try {
           setUpdatingUserId(user.id);
-          if (user.is_active) {
-            await adminApi.lockUser(user.id);
-          } else {
+          if (user.is_locked) {
             await adminApi.unlockUser(user.id);
+          } else {
+            await adminApi.lockUser(user.id);
           }
           message.success(`Đã ${action.toLowerCase()} tài khoản thành công`);
           refetch();
@@ -88,13 +93,12 @@ export default function AdminUsersPage() {
     },
     {
       title: 'Trạng thái',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      render: (isActive) => (
-        <Tag color={isActive ? 'success' : 'error'}>
-          {isActive ? 'Hoạt động' : 'Đã khóa'}
-        </Tag>
-      ),
+      key: 'account_status',
+      render: (_, record) => {
+        if (record.is_locked) return <Tag color="error">Đã khóa</Tag>;
+        if (!record.is_active) return <Tag color="warning">Chưa xác thực</Tag>;
+        return <Tag color="success">Hoạt động</Tag>;
+      },
     },
     {
       title: 'Hành động',
@@ -103,14 +107,14 @@ export default function AdminUsersPage() {
         <Space>
           {record.role !== 'ADMIN' && (
             <Button 
-              danger={record.is_active} 
-              type={!record.is_active ? "primary" : "default"}
+              danger={!record.is_locked}
+              type={record.is_locked ? 'primary' : 'default'}
               size="small" 
-              icon={record.is_active ? <LockOutlined /> : <UnlockOutlined />}
+              icon={record.is_locked ? <UnlockOutlined /> : <LockOutlined />}
               loading={updatingUserId === record.id}
               onClick={() => handleToggleLock(record)}
             >
-              {record.is_active ? 'Khóa' : 'Mở khóa'}
+              {record.is_locked ? 'Mở khóa' : 'Khóa'}
             </Button>
           )}
         </Space>
@@ -140,15 +144,16 @@ export default function AdminUsersPage() {
           />
           <span style={{ color: 'var(--text-secondary)' }}>Trạng thái:</span>
           <Select
-            value={isActiveFilter}
+            value={statusFilter}
             onChange={(value) => {
-              setIsActiveFilter(value);
+              setStatusFilter(value);
               setCurrentPage(1);
             }}
             style={{ width: 180 }}
           >
             <Option value="all">Tất cả</Option>
             <Option value="active">Đang hoạt động</Option>
+            <Option value="unverified">Chưa xác thực</Option>
             <Option value="locked">Đã khóa</Option>
           </Select>
         </Space>

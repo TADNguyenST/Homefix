@@ -1,4 +1,4 @@
-import { Form, Input, Button, Card, Typography, Divider, message, Select, Modal } from 'antd';
+import { Form, Input, Button, Card, Typography, Divider, message, Modal } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined, PhoneOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -6,8 +6,6 @@ import { authApi } from '../../api/authApi';
 import { useState, useEffect } from 'react';
 
 const { Title, Text } = Typography;
-const { Option } = Select;
-
 export default function RegisterPage() {
   const { register, verifyOtp } = useAuth();
   const navigate = useNavigate();
