@@ -8,7 +8,7 @@ import { BOOKING_STATUS_LABELS } from '../../utils/constants';
 
 const { Title, Text } = Typography;
 
-const activeStatuses = ['ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING'];
+const activeStatuses = ['ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING', 'AWAITING_PAYMENT'];
 
 const getBadgeType = (status) => {
   if (status === 'COMPLETED') return 'success';
@@ -30,7 +30,7 @@ export default function TechSchedulePage() {
   const jobs = jobsData?.data?.data || jobsData?.data || [];
 
   const getListData = (value) => jobs
-    .filter(job => dayjs(job.booking_date).isSame(value, 'day'))
+    .filter(job => dayjs(job.booking_date).format('YYYY-MM-DD') === value.format('YYYY-MM-DD'))
     .sort((a, b) => (a.time_slot_start || '').localeCompare(b.time_slot_start || ''))
     .map(job => ({
       type: getBadgeType(job.status),

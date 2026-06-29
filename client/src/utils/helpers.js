@@ -59,6 +59,17 @@ export const formatDuration = (minutes) => {
   return `${h} giờ ${m} phút`;
 };
 
+export const getBookingSlotDateTime = (date, slot) => {
+  if (!date || !slot) return null;
+  const [hour, minute] = slot.start.split(':').map(Number);
+  return dayjs(date).hour(hour).minute(minute).second(0).millisecond(0);
+};
+
+export const isBookingSlotAvailable = (date, slot, minAdvanceHours = 24) => {
+  const slotDateTime = getBookingSlotDateTime(date, slot);
+  return Boolean(slotDateTime && !slotDateTime.isBefore(dayjs().add(minAdvanceHours, 'hour')));
+};
+
 /**
  * Truncate text
  */

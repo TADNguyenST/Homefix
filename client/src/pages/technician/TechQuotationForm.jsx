@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, Typography, Space, message, InputNumber, Row, Col, Table, Divider } from 'antd';
-import { PlusOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Typography, Space, message, InputNumber, Row, Col, Table, Divider, Spin } from 'antd';
+import { PlusOutlined, DeleteOutlined, SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { technicianApi } from '../../api/technicianApi';
 import { formatVND } from '../../utils/helpers';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 export default function TechQuotationForm() {
   const { id } = useParams();
@@ -106,12 +106,22 @@ export default function TechQuotationForm() {
     },
   ];
 
-  if (isLoading) return <div>Đang tải...</div>;
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+        <Spin size="large" tip="Đang tải thông tin đơn hàng..." />
+      </div>
+    );
+  }
+
   if (job?.status !== 'INSPECTING') {
     return (
-      <div style={{ textAlign: 'center', padding: 50 }}>
-        <Title level={4}>Đơn hàng không ở trạng thái khảo sát</Title>
-        <Button onClick={() => navigate(`/technician/jobs/${id}`)}>Quay lại</Button>
+      <div style={{ textAlign: 'center', padding: '60px 20px', maxWidth: 500, margin: '0 auto' }}>
+        <Title level={4} style={{ color: 'var(--navy)', marginBottom: 16 }}>Đơn hàng không ở trạng thái khảo sát</Title>
+        <Paragraph type="secondary" style={{ marginBottom: 24 }}>
+          Bạn chỉ có thể tạo báo giá khi đơn hàng đang ở trạng thái khảo sát (INSPECTING).
+        </Paragraph>
+        <Button type="primary" onClick={() => navigate(`/technician/jobs/${id}`)}>Quay lại chi tiết công việc</Button>
       </div>
     );
   }

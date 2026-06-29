@@ -568,9 +568,17 @@ const getUsers = async (req, res) => {
 const lockUser = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const userToLock = await prisma.user.findUnique({ where: { id: parseInt(id) } });
+    if (!userToLock) return error(res, 'Không tìm thấy tài khoản', 404);
+
+    const newHash = userToLock.password_hash.startsWith('BANNED:')
+      ? userToLock.password_hash
+      : `BANNED:${userToLock.password_hash}`;
+
     const user = await prisma.user.update({
       where: { id: parseInt(id) },
-      data: { is_active: false },
+      data: { is_active: false, password_hash: newHash },
       select: { id: true, email: true, full_name: true, is_active: true },
     });
     return success(res, user, 'Khóa tài khoản thành công');
@@ -586,9 +594,17 @@ const lockUser = async (req, res) => {
 const unlockUser = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const userToUnlock = await prisma.user.findUnique({ where: { id: parseInt(id) } });
+    if (!userToUnlock) return error(res, 'Không tìm thấy tài khoản', 404);
+
+    const newHash = userToUnlock.password_hash.startsWith('BANNED:')
+      ? userToUnlock.password_hash.replace('BANNED:', '')
+      : userToUnlock.password_hash;
+
     const user = await prisma.user.update({
       where: { id: parseInt(id) },
-      data: { is_active: true },
+      data: { is_active: true, password_hash: newHash },
       select: { id: true, email: true, full_name: true, is_active: true },
     });
     return success(res, user, 'Mở khóa tài khoản thành công');
@@ -1447,6 +1463,34 @@ const toggleVoucher = async (req, res) => {
   }
 };
 
+/**
+ * GET /admin/vouchers/:id/usages
+ * Danh sách lịch sử sử dụng voucher.
+ */
+const getVoucherUsages = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const voucherId = parseInt(id);
+
+    const voucher = await prisma.voucher.findUnique({ where: { id: voucherId } });
+    if (!voucher) return error(res, 'Voucher không tồn tại', 404);
+
+    const usages = await prisma.voucherUsage.findMany({
+      where: { voucher_id: voucherId },
+      orderBy: { used_at: 'desc' },
+      include: {
+        user: { select: { id: true, full_name: true, email: true } },
+        booking: { select: { id: true, status: true, booking_date: true } },
+      },
+    });
+
+    return success(res, { voucher, usages });
+  } catch (err) {
+    console.error('getVoucherUsages error:', err);
+    return error(res, 'Không thể lấy lịch sử sử dụng voucher', 500);
+  }
+};
+
 // ========================
 // PAYMENT & COMPLAINT
 // ========================
@@ -1492,6 +1536,38 @@ const getPayments = async (req, res) => {
   } catch (err) {
     console.error('getPayments error:', err);
     return error(res, 'Không thể lấy danh sách thanh toán', 500);
+  }
+};
+
+/**
+ * GET /admin/payments/:id
+ * Chi tiết một giao dịch thanh toán.
+ */
+const getPaymentDetail = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payment = await prisma.payment.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        booking: {
+          include: {
+            customer: { select: { id: true, full_name: true, email: true, phone: true } },
+            service: { select: { id: true, name: true, base_price: true } },
+            technicianProfile: {
+              include: { user: { select: { id: true, full_name: true } } },
+            },
+            district: { select: { id: true, name: true } },
+            ward: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    if (!payment) return error(res, 'Không tìm thấy giao dịch thanh toán', 404);
+    return success(res, payment);
+  } catch (err) {
+    console.error('getPaymentDetail error:', err);
+    return error(res, 'Không thể lấy chi tiết thanh toán', 500);
   }
 };
 
@@ -1797,9 +1873,9 @@ module.exports = {
   // District & Ward
   getDistricts, createDistrict, updateDistrict, deleteDistrict, createWard, updateWard, deleteWard,
   // Voucher CRUD
-  getVouchers, createVoucher, updateVoucher, toggleVoucher,
+  getVouchers, createVoucher, updateVoucher, toggleVoucher, getVoucherUsages,
   // Payment & Complaint
-  getPayments, getComplaints, resolveComplaint,
+  getPayments, getPaymentDetail, getComplaints, resolveComplaint,
   // Dashboard
   getDashboard,
 };

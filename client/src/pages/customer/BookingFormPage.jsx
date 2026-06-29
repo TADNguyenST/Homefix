@@ -6,8 +6,8 @@ import { bookingApi, addressApi, uploadApi } from '../../api/bookingApi';
 import { serviceApi } from '../../api/serviceApi';
 import { aiApi } from '../../api/aiApi';
 import { useNavigate, useLocation } from 'react-router-dom';
-import dayjs from 'dayjs';
-import { formatVND } from '../../utils/helpers';
+import { formatVND, isBookingSlotAvailable } from '../../utils/helpers';
+import { BOOKING_TIME_SLOTS } from '../../utils/constants';
 
 // Tiện ích chuyển đổi File sang Base64
 const getBase64 = (file) =>
@@ -160,16 +160,17 @@ export default function BookingFormPage() {
         return;
       }
 
-      const scheduledTime = values.scheduled_time ?? form.getFieldValue('scheduled_time');
-      if (!scheduledTime) {
-        message.error('Vui lòng chọn thời gian mong muốn!');
+      const bookingDate = values.booking_date ?? form.getFieldValue('booking_date');
+      const selectedSlotValue = values.time_slot ?? form.getFieldValue('time_slot');
+      const selectedSlot = BOOKING_TIME_SLOTS.find(slot => slot.value === selectedSlotValue);
+      if (!bookingDate || !selectedSlot) {
+        message.error('Vui lòng chọn ngày và ca sửa chữa!');
         return;
       }
 
-      const booking_date = scheduledTime.format('YYYY-MM-DD');
-      const time_slot_start = scheduledTime.format('HH:mm');
-      // Thời lượng mặc định 2 tiếng cho một ca làm việc
-      const time_slot_end = scheduledTime.add(2, 'hour').format('HH:mm');
+      const booking_date = bookingDate.format('YYYY-MM-DD');
+      const time_slot_start = selectedSlot.start;
+      const time_slot_end = selectedSlot.end;
       const uploadableFiles = fileList
         .map(file => file.originFileObj)
         .filter(Boolean);
@@ -218,7 +219,7 @@ export default function BookingFormPage() {
   const next = () => {
     const stepFields = currentStep === 0
       ? ['issue_description', 'service_id']
-      : ['scheduled_time', 'address_id'];
+      : ['booking_date', 'time_slot', 'address_id'];
     form.validateFields(stepFields).then(() => {
       setCurrentStep(currentStep + 1);
     });
@@ -227,6 +228,9 @@ export default function BookingFormPage() {
   const prev = () => setCurrentStep(currentStep - 1);
 
   const selectedServiceId = Form.useWatch('service_id', form);
+  const selectedBookingDate = Form.useWatch('booking_date', form);
+  const selectedTimeSlotValue = Form.useWatch('time_slot', form);
+  const selectedTimeSlot = BOOKING_TIME_SLOTS.find(slot => slot.value === selectedTimeSlotValue);
   const selectedService = services.find(s => s.id === selectedServiceId);
   const filteredDeviceTypes = selectedService
     ? deviceTypes.filter(d => !d.category_id || d.category_id === selectedService.category_id)
@@ -399,18 +403,47 @@ export default function BookingFormPage() {
       content: (
         <div style={{ marginTop: 24 }}>
           <Form.Item
-            name="scheduled_time"
-            label="Thời gian mong muốn"
-            rules={[{ required: true, message: 'Vui lòng chọn thời gian!' }]}
+            name="booking_date"
+            label="Ngày mong muốn"
+            rules={[{ required: true, message: 'Vui lòng chọn ngày sửa chữa!' }]}
           >
             <DatePicker 
-              showTime 
-              format="DD/MM/YYYY HH:mm" 
+              format="DD/MM/YYYY"
               size="large" 
               style={{ width: '100%' }} 
-              disabledDate={(current) => current && current < dayjs().add(24, 'hour').startOf('day')}
+              placeholder="Chọn ngày sửa chữa"
+              onChange={() => form.setFieldValue('time_slot', undefined)}
+              disabledDate={(current) =>
+                current && BOOKING_TIME_SLOTS.every(
+                  (slot) => !isBookingSlotAvailable(current, slot)
+                )
+              }
             />
           </Form.Item>
+
+          <Form.Item
+            name="time_slot"
+            label="Ca sửa chữa"
+            rules={[{ required: true, message: 'Vui lòng chọn ca sửa chữa!' }]}
+          >
+            <Select
+              size="large"
+              placeholder={selectedBookingDate ? 'Chọn ca phù hợp' : 'Chọn ngày trước'}
+              disabled={!selectedBookingDate}
+              options={BOOKING_TIME_SLOTS.map((slot) => ({
+                value: slot.value,
+                label: slot.label,
+                disabled: !isBookingSlotAvailable(selectedBookingDate, slot),
+              }))}
+            />
+          </Form.Item>
+
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 24 }}
+            message="Mỗi ca kéo dài 2 giờ và phải được đặt trước ít nhất 24 giờ."
+          />
 
           <Form.Item
             name="address_id"
@@ -467,6 +500,14 @@ export default function BookingFormPage() {
               <Text type="secondary">Phí dịch vụ cơ bản:</Text>
               <Text strong style={{ color: 'var(--text-primary)' }}>
                 {selectedService ? formatVND(selectedService.base_price) : '---'}
+              </Text>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text type="secondary">Lịch sửa chữa:</Text>
+              <Text strong>
+                {selectedBookingDate && selectedTimeSlot
+                  ? `${selectedBookingDate.format('DD/MM/YYYY')} ${selectedTimeSlot.label}`
+                  : '---'}
               </Text>
             </div>
 
@@ -538,10 +579,10 @@ export default function BookingFormPage() {
             <Radio.Group style={{ width: '100%' }}>
               <Space direction="vertical" style={{ width: '100%' }}>
                 <Card size="small" style={{ border: '1px solid #e2e8f0', cursor: 'pointer' }} onClick={() => form.setFieldsValue({ payment_method: 'CASH' })}>
-                  <Radio value="CASH">Tiền mặt sau khi hoàn thành</Radio>
+                  <Radio value="CASH">Tiền mặt sau khi sửa chữa hoàn tất</Radio>
                 </Card>
                 <Card size="small" style={{ border: '1px solid #e2e8f0', cursor: 'pointer' }} onClick={() => form.setFieldsValue({ payment_method: 'VNPAY' })}>
-                  <Radio value="VNPAY">Chuyển khoản / VNPAY</Radio>
+                  <Radio value="VNPAY">VNPAY sau khi sửa chữa hoàn tất</Radio>
                 </Card>
               </Space>
             </Radio.Group>

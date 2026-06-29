@@ -16,6 +16,7 @@ export default function AdminBookingsPage() {
   const [selectedTechId, setSelectedTechId] = useState(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [recommendedTechs, setRecommendedTechs] = useState([]);
+  const [recommendClicked, setRecommendClicked] = useState(false);
 
   const { data: bookingsData, isLoading, refetch } = useQuery({
     queryKey: ['admin-bookings'],
@@ -24,7 +25,7 @@ export default function AdminBookingsPage() {
 
   const { data: techsData } = useQuery({
     queryKey: ['admin-technicians'],
-    queryFn: () => adminApi.getTechnicians(),
+    queryFn: () => adminApi.getTechnicians({ limit: 100 }),
   });
 
   const { data: detailData, isLoading: detailLoading } = useQuery({
@@ -34,13 +35,15 @@ export default function AdminBookingsPage() {
   });
 
   const bookings = bookingsData?.data || [];
-  const technicians = techsData?.data || [];
+  const technicianList = techsData?.data?.data || techsData?.data || [];
+  const technicians = technicianList.filter((tech) => tech.user?.is_active !== false);
   const bookingDetail = detailData?.data || selectedBooking;
 
   const openAssign = (booking) => {
     setSelectedBooking(booking);
     setSelectedTechId(booking.technician_profile_id || null);
     setRecommendedTechs([]);
+    setRecommendClicked(false);
     setAssignModalOpen(true);
   };
 
@@ -91,8 +94,11 @@ export default function AdminBookingsPage() {
   const recommendTech = async () => {
     try {
       setLoadingAction(true);
+      setRecommendClicked(true);
       const res = await adminApi.recommendTech(selectedBooking.id);
-      const suggestions = res.data?.data?.technicians || res.data?.data || [];
+      const suggestions = Array.isArray(res.data)
+        ? res.data
+        : res.data?.technicians || [];
       setRecommendedTechs(suggestions);
       if (suggestions[0]?.id) {
         setSelectedTechId(suggestions[0].id);
@@ -183,13 +189,40 @@ export default function AdminBookingsPage() {
               Chuyển thợ
             </Button>
           )}
-          {!['COMPLETED', 'CANCELLED'].includes(record.status) && (
+          {!['AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED'].includes(record.status) && (
             <Button size="small" danger icon={<CloseCircleOutlined />} onClick={() => cancelBooking(record)}>Hủy</Button>
           )}
         </Space>
       ),
     },
   ];
+
+  const sortedTechnicians = [...technicians].sort((a, b) => {
+    if (!selectedBooking) return 0;
+    const aMatchSkill = a.skills?.some(s => s.service_id === selectedBooking.service_id) ? 1 : 0;
+    const bMatchSkill = b.skills?.some(s => s.service_id === selectedBooking.service_id) ? 1 : 0;
+    if (aMatchSkill !== bMatchSkill) return bMatchSkill - aMatchSkill;
+
+    const aMatchDistrict = (a.district_id === selectedBooking.district_id || !a.district_id) ? 1 : 0;
+    const bMatchDistrict = (b.district_id === selectedBooking.district_id || !b.district_id) ? 1 : 0;
+    if (aMatchDistrict !== bMatchDistrict) return bMatchDistrict - aMatchDistrict;
+
+    return (b.is_available ? 1 : 0) - (a.is_available ? 1 : 0);
+  });
+
+  const getTechOptionLabel = (tech) => {
+    if (!selectedBooking) return tech.user?.full_name || '';
+    const isMatchingSkill = tech.skills?.some(s => s.service_id === selectedBooking.service_id);
+    const isSameDistrict = tech.district_id === selectedBooking.district_id || !tech.district_id;
+    
+    let labels = [];
+    if (!isMatchingSkill) labels.push('Thiếu kỹ năng');
+    if (!isSameDistrict) labels.push('Khác quận');
+    if (!tech.is_available) labels.push('Bận');
+    
+    const statusText = labels.length > 0 ? ` [⚠️ ${labels.join(', ')}]` : ' [✓ Phù hợp]';
+    return `${tech.user?.full_name} - ${tech.district?.name || 'Toàn TP'} - ${Number(tech.avg_rating || 0).toFixed(1)} sao ${statusText}`;
+  };
 
   return (
     <div>
@@ -222,15 +255,57 @@ export default function AdminBookingsPage() {
           <Button icon={<RobotOutlined />} onClick={recommendTech} loading={loadingAction}>
             Gợi ý kỹ thuật viên bằng AI
           </Button>
-          {recommendedTechs.length > 0 && (
-            <div>
-              <Text strong>Gợi ý phù hợp:</Text>
-              <ul style={{ marginTop: 8 }}>
-                {recommendedTechs.slice(0, 5).map((tech) => (
-                  <li key={tech.id}>{tech.user?.full_name || tech.full_name || `Kỹ thuật viên #${tech.id}`}</li>
-                ))}
-              </ul>
-            </div>
+          {recommendClicked && (
+            recommendedTechs.length > 0 ? (
+              <div style={{ background: '#f5f7fa', padding: 12, borderRadius: 8, border: '1px solid #e8e8e8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 6 }}>
+                  <RobotOutlined style={{ color: '#1890ff', fontSize: 16 }} />
+                  <Text strong style={{ color: '#1890ff' }}>Đề xuất tốt nhất từ AI:</Text>
+                </div>
+                <Space direction="vertical" style={{ width: '100%' }} size="small">
+                  {recommendedTechs.slice(0, 3).map((tech) => {
+                    const isSelected = selectedTechId === tech.id;
+                    return (
+                      <div
+                        key={tech.id}
+                        onClick={() => setSelectedTechId(tech.id)}
+                        style={{
+                          padding: '10px 12px',
+                          background: isSelected ? '#e6f7ff' : '#fff',
+                          border: isSelected ? '1px solid #1890ff' : '1px solid #f0f0f0',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 4
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: isSelected ? 700 : 600, color: isSelected ? '#0050b3' : 'inherit' }}>
+                            {tech.user?.full_name || `Kỹ thuật viên #${tech.id}`}
+                          </span>
+                          <Tag color={tech.ai_score >= 85 ? 'success' : 'processing'} style={{ margin: 0, fontWeight: 700 }}>
+                            {tech.ai_score}% phù hợp
+                          </Tag>
+                        </div>
+                        {tech.ai_reason && (
+                          <Text type="secondary" style={{ fontSize: 12, fontStyle: 'italic', marginTop: 2 }}>
+                            {tech.ai_reason}
+                          </Text>
+                        )}
+                      </div>
+                    );
+                  })}
+                </Space>
+              </div>
+            ) : (
+              <div style={{ background: '#fff2f0', padding: 12, borderRadius: 8, border: '1px solid #ffccc7' }}>
+                <Text type="danger" style={{ fontWeight: 600 }}>
+                  Không tìm thấy kỹ thuật viên nào phù hợp với yêu cầu của đơn hàng này.
+                </Text>
+              </div>
+            )
           )}
           <Select
             style={{ width: '100%' }}
@@ -240,9 +315,9 @@ export default function AdminBookingsPage() {
             showSearch
             optionFilterProp="children"
           >
-            {technicians.map((tech) => (
+            {sortedTechnicians.map((tech) => (
               <Option key={tech.id} value={tech.id}>
-                {tech.user?.full_name} - {tech.district?.name || 'Chưa có khu vực'} - {Number(tech.avg_rating || 0).toFixed(1)} sao
+                {getTechOptionLabel(tech)}
               </Option>
             ))}
           </Select>
@@ -295,7 +370,7 @@ export default function AdminBookingsPage() {
                   Chuyển thợ
                 </Button>
               )}
-              {!['COMPLETED', 'CANCELLED'].includes(bookingDetail.status) && (
+              {!['AWAITING_PAYMENT', 'COMPLETED', 'CANCELLED'].includes(bookingDetail.status) && (
                 <Button danger icon={<CloseCircleOutlined />} onClick={() => cancelBooking(bookingDetail)}>Hủy đơn</Button>
               )}
             </Form>

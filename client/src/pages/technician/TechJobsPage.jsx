@@ -3,7 +3,7 @@ import { EyeOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { technicianApi } from '../../api/technicianApi';
 import { Link, useNavigate } from 'react-router-dom';
-import { formatVND, formatDateTime } from '../../utils/helpers';
+import { formatVND, formatDate, formatDateTime } from '../../utils/helpers';
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS } from '../../utils/constants';
 
 const { Title, Text } = Typography;
@@ -39,33 +39,31 @@ export default function TechJobsPage() {
       title: 'Mã Đơn',
       dataIndex: 'id',
       key: 'id',
-      render: (id) => <span style={{ fontWeight: 600 }}>#{id.substring(0, 8)}</span>,
+      render: (id) => <span style={{ fontWeight: 600 }}>#{id}</span>,
     },
     {
       title: 'Khách hàng',
-      dataIndex: 'Customer',
+      dataIndex: 'customer',
       key: 'customer',
-      render: (customer) => customer?.User?.full_name || 'N/A',
+      render: (customer) => customer?.full_name || 'N/A',
     },
     {
       title: 'Dịch vụ',
-      dataIndex: ['Service', 'name'],
+      dataIndex: ['service', 'name'],
       key: 'service',
       render: (text) => <span style={{ fontWeight: 500, color: 'var(--navy)' }}>{text}</span>,
     },
     {
       title: 'Ngày hẹn',
-      dataIndex: 'scheduled_time',
-      key: 'scheduled_time',
-      render: (time) => formatDateTime(time),
+      key: 'booking_date',
+      render: (_, record) => `${formatDate(record.booking_date)} ${record.time_slot_start || ''} - ${record.time_slot_end || ''}`,
     },
     {
       title: 'Địa chỉ',
-      dataIndex: 'Address',
       key: 'address',
-      render: (addr) => (
+      render: (_, record) => (
         <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          {addr?.street_address}, {addr?.Ward?.name}, {addr?.District?.name}
+          {record.address_detail}, {record.ward?.name}, {record.district?.name}
         </span>
       ),
       ellipsis: true,
@@ -78,7 +76,7 @@ export default function TechJobsPage() {
         const colorCfg = BOOKING_STATUS_COLORS[status] || {};
         return (
           <Tag color={colorCfg.bg} style={{ color: colorCfg.color, border: 'none', fontWeight: 600, padding: '4px 12px', borderRadius: 'var(--radius-full)' }}>
-            {BOOKING_STATUS_LABELS[status]}
+            {BOOKING_STATUS_LABELS[status] || status}
           </Tag>
         );
       },

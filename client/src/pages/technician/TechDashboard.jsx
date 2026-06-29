@@ -42,7 +42,7 @@ export default function TechDashboard() {
   const avgRating = ratingData?.data?.avg_rating || 0;
 
   // Active jobs filter
-  const activeJobsList = jobs.filter(b => ['ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING'].includes(b.status));
+  const activeJobsList = jobs.filter(b => ['ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING', 'AWAITING_PAYMENT'].includes(b.status));
   const completedJobsList = jobs.filter(b => b.status === 'COMPLETED');
   const totalSpent = completedJobsList.filter(b => b.payment?.status === 'PAID').reduce((sum, b) => sum + Number(b.final_price || b.estimated_price || 0), 0);
 
@@ -307,13 +307,13 @@ export default function TechDashboard() {
                           type="primary" 
                           icon={<CheckCircleOutlined />}
                           style={{ background: 'var(--success)', borderColor: 'var(--success)' }}
-                          onClick={() => updateStatusMutation.mutate({ id: job.id, status: 'COMPLETED' })}
+                          onClick={() => updateStatusMutation.mutate({ id: job.id, status: 'AWAITING_PAYMENT' })}
                         >
                           Hoàn tất sửa chữa
                         </Button>
                       )}
 
-                      {job.status === 'COMPLETED' && job.payment?.method === 'CASH' && job.payment?.status === 'UNPAID' && (
+                      {job.status === 'AWAITING_PAYMENT' && job.payment?.method === 'CASH' && job.payment?.status === 'UNPAID' && (
                         <Button 
                           type="primary" 
                           icon={<DollarCircleOutlined />}
@@ -322,6 +322,10 @@ export default function TechDashboard() {
                         >
                           Thu tiền mặt & Xác nhận thanh toán
                         </Button>
+                      )}
+
+                      {job.status === 'AWAITING_PAYMENT' && job.payment?.method === 'VNPAY' && job.payment?.status !== 'PAID' && (
+                        <Tag color="warning" style={{ fontWeight: 600, padding: '4px 12px' }}>Chờ khách thanh toán VNPAY</Tag>
                       )}
 
                       {job.status === 'COMPLETED' && (job.payment?.status === 'PAID') && (

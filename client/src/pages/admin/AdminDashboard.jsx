@@ -142,6 +142,10 @@ export default function AdminDashboard() {
               <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--info)' }}>{(stats.bookingsByStatus?.IN_PROGRESS || 0) + (stats.bookingsByStatus?.INSPECTING || 0) + (stats.bookingsByStatus?.COMPLETING || 0)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
+              <span style={{ fontSize: 15 }}>Chờ thanh toán</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--warning)' }}>{stats.bookingsByStatus?.AWAITING_PAYMENT || 0}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
               <span style={{ fontSize: 15 }}>Đã gán thợ / Chờ báo giá</span>
               <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--warning)' }}>{(stats.bookingsByStatus?.ASSIGNED || 0) + (stats.bookingsByStatus?.QUOTED || 0)}</span>
             </div>

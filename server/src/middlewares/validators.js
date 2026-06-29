@@ -112,8 +112,8 @@ const rescheduleBookingSchema = z.object({
 });
 
 const updateJobStatusSchema = z.object({
-  new_status: z.enum(['INSPECTING', 'COMPLETING', 'COMPLETED'], {
-    errorMap: () => ({ message: 'Trạng thái hợp lệ: INSPECTING, COMPLETING, COMPLETED' }),
+  new_status: z.enum(['INSPECTING', 'COMPLETING', 'AWAITING_PAYMENT'], {
+    errorMap: () => ({ message: 'Trạng thái hợp lệ: INSPECTING, COMPLETING, AWAITING_PAYMENT' }),
   }),
   note: z.string().max(1000).optional().nullable(),
 });

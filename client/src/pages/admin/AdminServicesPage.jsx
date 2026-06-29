@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Table, Button, Typography, Space, Modal, Form, Input, InputNumber, Select, Switch, message, Tag, Upload } from 'antd';
-import { EditOutlined, DeleteOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
 import axiosClient from '../../api/axiosClient';
@@ -85,17 +85,20 @@ export default function AdminServicesPage() {
     }
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = (record) => {
     Modal.confirm({
       title: 'Xóa dịch vụ?',
-      content: 'Chỉ xóa khi dịch vụ này chưa có đơn đặt lịch nào.',
+      content: `Dịch vụ "${record.name}" sẽ bị xóa khỏi danh sách nếu chưa từng có đơn đặt lịch.`,
+      okText: 'Xóa dịch vụ',
+      cancelText: 'Đóng',
+      okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await adminApi.deleteService(id);
+          await adminApi.deleteService(record.id);
           message.success('Đã xóa dịch vụ');
           refetch();
         } catch (err) {
-          message.error(err.response?.data?.message || err.message || 'Lỗi khi xóa');
+          message.error(err.response?.data?.message || err.message || 'Lỗi khi xóa dịch vụ');
         }
       }
     });
@@ -113,7 +116,7 @@ export default function AdminServicesPage() {
       const imageUrl = API_BASE + res.data.url;
       form.setFieldsValue({ image_url: imageUrl });
       message.success('Upload ảnh thành công');
-    } catch (err) {
+    } catch {
       message.error('Lỗi upload ảnh');
     } finally {
       setUploading(false);
@@ -181,7 +184,12 @@ export default function AdminServicesPage() {
       render: (_, record) => (
         <Space>
           <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} />
-          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+          <Button
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record)}
+          />
         </Space>
       ),
       width: 120,

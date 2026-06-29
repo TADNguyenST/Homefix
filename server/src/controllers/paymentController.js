@@ -9,7 +9,7 @@ const prisma = require('../utils/prisma');
 const { success, error, paginated } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { BOOKING_STATUS, PAYMENT_STATUS, QUOTATION_STATUS } = require('../config/constants');
-const { notifyPaymentSuccess } = require('../services/notificationService');
+const { completeBookingPayment } = require('../services/paymentCompletionService');
 
 // ========================
 // VNPAY CONFIG
@@ -60,8 +60,8 @@ const createVnpayUrl = async (req, res) => {
     if (booking.customer_id !== customerId) {
       return error(res, 'Bạn không có quyền thanh toán đơn này', 403);
     }
-    if (booking.status !== BOOKING_STATUS.COMPLETED) {
-      return error(res, `Chỉ thanh toán khi đơn đã hoàn thành. Trạng thái hiện tại: "${booking.status}"`, 400);
+    if (booking.status !== BOOKING_STATUS.AWAITING_PAYMENT) {
+      return error(res, `Chỉ thanh toán khi đơn đang chờ thanh toán. Trạng thái hiện tại: "${booking.status}"`, 400);
     }
     if (booking.payment_method !== 'VNPAY') {
       return error(res, 'Đơn này không sử dụng phương thức VNPAY', 400);
@@ -82,7 +82,7 @@ const createVnpayUrl = async (req, res) => {
       const acceptedQuotation = await prisma.quotation.findFirst({
         where: { booking_id: bookingId, status: QUOTATION_STATUS.ACCEPTED },
       });
-      finalPrice = Number(booking.estimated_price) + (acceptedQuotation ? Number(acceptedQuotation.total_extra_price) : 0);
+      finalPrice = acceptedQuotation ? Number(acceptedQuotation.total_extra_price) : Number(booking.estimated_price);
     }
 
     // Cập nhật final_price vào booking
@@ -97,29 +97,14 @@ const createVnpayUrl = async (req, res) => {
       const vnpayTxnRef = `SIM_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
       const transactionCode = `TXN_${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
 
-      await prisma.payment.update({
-        where: { booking_id: bookingId },
-        data: {
-          status: PAYMENT_STATUS.PAID,
-          amount: finalPrice,
-          paid_at: new Date(),
-          transaction_code: transactionCode,
-          vnpay_txn_ref: vnpayTxnRef,
-          vnpay_response_code: '00',
-        },
+      await completeBookingPayment({
+        bookingId,
+        amount: finalPrice,
+        changedBy: customerId,
+        transactionCode,
+        vnpayTxnRef,
+        vnpayResponseCode: '00',
       });
-
-      await notifyPaymentSuccess(customerId, bookingId, finalPrice);
-
-      if (booking.technician_profile_id) {
-        const techProfile = await prisma.technicianProfile.findUnique({
-          where: { id: booking.technician_profile_id },
-          select: { user_id: true },
-        });
-        if (techProfile) {
-          await notifyPaymentSuccess(techProfile.user_id, bookingId, finalPrice);
-        }
-      }
 
       return success(res, {
         mode: 'SIMULATE',
@@ -215,6 +200,7 @@ const vnpayReturn = async (req, res) => {
     const vnpTxnRef = vnp_Params['vnp_TxnRef'];
     const vnpResponseCode = vnp_Params['vnp_ResponseCode'];
     const vnpTransactionNo = vnp_Params['vnp_TransactionNo'];
+    const paidAmount = Number(vnp_Params['vnp_Amount']) / 100;
 
     // Tìm payment theo vnpay_txn_ref
     const payment = await prisma.payment.findFirst({
@@ -224,6 +210,9 @@ const vnpayReturn = async (req, res) => {
 
     if (!payment) {
       return error(res, 'Không tìm thấy giao dịch', 404);
+    }
+    if (paidAmount !== Number(payment.amount)) {
+      return error(res, 'Số tiền thanh toán không khớp với đơn hàng', 400);
     }
 
     // Đã xử lý rồi thì bỏ qua
@@ -236,28 +225,14 @@ const vnpayReturn = async (req, res) => {
 
     if (vnpResponseCode === '00') {
       // === THANH TOÁN THÀNH CÔNG ===
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: PAYMENT_STATUS.PAID,
-          paid_at: new Date(),
-          transaction_code: vnpTransactionNo,
-          vnpay_response_code: vnpResponseCode,
-        },
+      await completeBookingPayment({
+        bookingId: payment.booking_id,
+        amount: paidAmount,
+        changedBy: payment.booking.customer_id,
+        transactionCode: vnpTransactionNo,
+        vnpayTxnRef: vnpTxnRef,
+        vnpayResponseCode: vnpResponseCode,
       });
-
-      // Gửi thông báo
-      await notifyPaymentSuccess(payment.booking.customer_id, payment.booking_id, Number(payment.amount));
-
-      if (payment.booking.technician_profile_id) {
-        const techProfile = await prisma.technicianProfile.findUnique({
-          where: { id: payment.booking.technician_profile_id },
-          select: { user_id: true },
-        });
-        if (techProfile) {
-          await notifyPaymentSuccess(techProfile.user_id, payment.booking_id, Number(payment.amount));
-        }
-      }
 
       return success(res, {
         booking_id: payment.booking_id,
@@ -309,13 +284,18 @@ const vnpayIpn = async (req, res) => {
     const vnpTxnRef = vnp_Params['vnp_TxnRef'];
     const vnpResponseCode = vnp_Params['vnp_ResponseCode'];
     const vnpTransactionNo = vnp_Params['vnp_TransactionNo'];
+    const paidAmount = Number(vnp_Params['vnp_Amount']) / 100;
 
     const payment = await prisma.payment.findFirst({
       where: { vnpay_txn_ref: vnpTxnRef },
+      include: { booking: { select: { customer_id: true } } },
     });
 
     if (!payment) {
       return res.status(200).json({ RspCode: '01', Message: 'Order not found' });
+    }
+    if (paidAmount !== Number(payment.amount)) {
+      return res.status(200).json({ RspCode: '04', Message: 'Invalid amount' });
     }
 
     if (payment.status === PAYMENT_STATUS.PAID) {
@@ -323,14 +303,13 @@ const vnpayIpn = async (req, res) => {
     }
 
     if (vnpResponseCode === '00') {
-      await prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: PAYMENT_STATUS.PAID,
-          paid_at: new Date(),
-          transaction_code: vnpTransactionNo,
-          vnpay_response_code: vnpResponseCode,
-        },
+      await completeBookingPayment({
+        bookingId: payment.booking_id,
+        amount: paidAmount,
+        changedBy: payment.booking.customer_id,
+        transactionCode: vnpTransactionNo,
+        vnpayTxnRef: vnpTxnRef,
+        vnpayResponseCode: vnpResponseCode,
       });
       return res.status(200).json({ RspCode: '00', Message: 'Confirm success' });
     } else {

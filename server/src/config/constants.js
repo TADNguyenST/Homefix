@@ -10,7 +10,8 @@ const BOOKING_STATUS = {
   INSPECTING: 'INSPECTING',     // Thợ đang khảo sát, kiểm tra thiết bị
   QUOTED: 'QUOTED',             // Thợ đã gửi báo giá, chờ khách duyệt
   COMPLETING: 'COMPLETING',     // Khách duyệt báo giá, thợ đang sửa
-  COMPLETED: 'COMPLETED',       // Hoàn thành sửa chữa
+  AWAITING_PAYMENT: 'AWAITING_PAYMENT', // Đã sửa xong, chờ thanh toán
+  COMPLETED: 'COMPLETED',       // Đã thanh toán và hoàn tất
   CANCELLED: 'CANCELLED',       // Đã hủy
 };
 
@@ -22,7 +23,8 @@ const BOOKING_STATUS_TRANSITIONS = {
   [BOOKING_STATUS.IN_PROGRESS]:  [BOOKING_STATUS.INSPECTING, BOOKING_STATUS.CANCELLED],
   [BOOKING_STATUS.INSPECTING]:   [BOOKING_STATUS.QUOTED, BOOKING_STATUS.COMPLETING, BOOKING_STATUS.CANCELLED],
   [BOOKING_STATUS.QUOTED]:       [BOOKING_STATUS.COMPLETING, BOOKING_STATUS.CANCELLED],
-  [BOOKING_STATUS.COMPLETING]:   [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED],
+  [BOOKING_STATUS.COMPLETING]:   [BOOKING_STATUS.AWAITING_PAYMENT],
+  [BOOKING_STATUS.AWAITING_PAYMENT]: [BOOKING_STATUS.COMPLETED],
   [BOOKING_STATUS.COMPLETED]:    [], // Trạng thái cuối, không chuyển tiếp
   [BOOKING_STATUS.CANCELLED]:    [], // Trạng thái cuối, không chuyển tiếp
 };
@@ -88,6 +90,12 @@ const BUSINESS_RULES = {
   MIN_BOOKING_ADVANCE_HOURS: 24,    // Đặt trước ít nhất 24h
   BOOKING_TIME_START: '08:00',       // Ca làm việc bắt đầu
   BOOKING_TIME_END: '18:00',         // Ca làm việc kết thúc
+  BOOKING_TIME_SLOTS: [
+    { start: '08:00', end: '10:00' },
+    { start: '10:00', end: '12:00' },
+    { start: '13:00', end: '15:00' },
+    { start: '15:00', end: '17:00' },
+  ],
   MIN_RATING: 1,
   MAX_RATING: 5,
   DEFAULT_PAGE_SIZE: 10,
