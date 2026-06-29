@@ -598,9 +598,17 @@ const getUsers = async (req, res) => {
 const lockUser = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    const userToLock = await prisma.user.findUnique({ where: { id: parseInt(id) } });
+    if (!userToLock) return error(res, 'Không tìm thấy tài khoản', 404);
+
+    const newHash = userToLock.password_hash.startsWith('BANNED:') 
+      ? userToLock.password_hash 
+      : `BANNED:${userToLock.password_hash}`;
+
     const user = await prisma.user.update({
       where: { id: parseInt(id) },
-      data: { is_active: false },
+      data: { is_active: false, password_hash: newHash },
       select: { id: true, email: true, full_name: true, is_active: true },
     });
     return success(res, user, 'Khóa tài khoản thành công');
@@ -616,9 +624,17 @@ const lockUser = async (req, res) => {
 const unlockUser = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const userToUnlock = await prisma.user.findUnique({ where: { id: parseInt(id) } });
+    if (!userToUnlock) return error(res, 'Không tìm thấy tài khoản', 404);
+
+    const newHash = userToUnlock.password_hash.startsWith('BANNED:') 
+      ? userToUnlock.password_hash.replace('BANNED:', '') 
+      : userToUnlock.password_hash;
+
     const user = await prisma.user.update({
       where: { id: parseInt(id) },
-      data: { is_active: true },
+      data: { is_active: true, password_hash: newHash },
       select: { id: true, email: true, full_name: true, is_active: true },
     });
     return success(res, user, 'Mở khóa tài khoản thành công');

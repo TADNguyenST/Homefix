@@ -14,20 +14,28 @@ const register = async (req, res) => {
     // Check Email
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      if (!existingUser.is_active) {
-        return error(res, 'Email đã được đăng ký nhưng chưa xác thực. Vui lòng dùng chức năng "Gửi lại OTP".', 409);
+      if (existingUser.password_hash.startsWith('BANNED:')) {
+        return error(res, 'Tài khoản của bạn đã bị Admin khóa vĩnh viễn.', 403);
       }
-      return error(res, 'Email đã được đăng ký', 409);
+      if (!existingUser.is_active) {
+        await prisma.user.delete({ where: { id: existingUser.id } });
+      } else {
+        return error(res, 'Email đã được đăng ký', 409);
+      }
     }
 
     // Check sdt
     if (phone) {
       const existingPhone = await prisma.user.findFirst({ where: { phone } });
       if (existingPhone) {
-        if (!existingPhone.is_active) {
-          return error(res, 'Số điện thoại đã được liên kết với một tài khoản chưa xác thực.', 409);
+        if (existingPhone.password_hash.startsWith('BANNED:')) {
+          return error(res, 'Số điện thoại này thuộc về tài khoản đã bị khóa vĩnh viễn.', 403);
         }
-        return error(res, 'Số điện thoại đã được đăng ký', 409);
+        if (!existingPhone.is_active) {
+          await prisma.user.delete({ where: { id: existingPhone.id } });
+        } else {
+          return error(res, 'Số điện thoại đã được đăng ký', 409);
+        }
       }
     }
 
@@ -187,6 +195,10 @@ const login = async (req, res) => {
       return error(res, 'Email hoặc mật khẩu không đúng', 401);
     }
 
+    if (user.password_hash.startsWith('BANNED:')) {
+      return error(res, 'Tài khoản của bạn đã bị Admin khóa vĩnh viễn.', 403);
+    }
+
     // Check đã Active
     if (!user.is_active) {
       return error(res, 'Tài khoản chưa được xác thực. Vui lòng kiểm tra email để nhập mã OTP.', 403);
@@ -233,6 +245,10 @@ const forgotPassword = async (req, res) => {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return success(res, null, 'Nếu email tồn tại, chúng tôi đã gửi mã OTP. Vui lòng kiểm tra hộp thư.');
+    }
+
+    if (user.password_hash.startsWith('BANNED:')) {
+      return error(res, 'Tài khoản của bạn đã bị khóa vĩnh viễn, không thể thao tác.', 403);
     }
 
     if (!user.is_active) {
