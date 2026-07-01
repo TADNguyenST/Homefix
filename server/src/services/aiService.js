@@ -1,10 +1,3 @@
-// ============================================================
-// HOMEFIX AI — AI Service (Gemini Integration)
-// Xử lý nghiệp vụ AI: chẩn đoán sự cố, phân tích sentiment,
-// gợi ý kỹ thuật viên.
-// Nếu GEMINI_API_KEY rỗng → trả về mock data.
-// ============================================================
-
 const prisma = require('../utils/prisma');
 
 // Khởi tạo Gemini model (lazy init, chỉ khi có API key)
@@ -52,12 +45,12 @@ const MOCK_SENTIMENT = 'NEUTRAL';
 const getSmartMockDiagnosis = async (description) => {
   try {
     const descLower = description.toLowerCase();
-    
+
     // Tìm các dịch vụ trong DB để map chính xác tên
     const allServices = await prisma.service.findMany({
       select: { id: true, name: true, base_price: true }
     });
-    
+
     let matchedServices = [];
     let errorDesc = 'Sự cố cần kiểm tra thực tế để xác định chính xác.';
     let solution = 'Kỹ thuật viên sẽ đến tận nơi đo đạc và đưa ra phương án sửa chữa.';
@@ -184,6 +177,7 @@ YÊU CẦU TRẢ VỀ JSON CÓ CẤU TRÚC SAU:
 4. Lời khuyên an toàn khẩn cấp lập tức cho chủ nhà (safety_tips): Một danh sách gồm 2-3 lời khuyên ngắn gọn ví dụ: "Ngắt aptomat", "Khóa van nước tổng".
 5. Gợi ý 1-2 dịch vụ phù hợp trong hệ thống của chúng tôi (suggested_services).
 6. QUAN TRỌNG: Hãy chọn RA 1 DỊCH VỤ PHÙ HỢP NHẤT từ danh sách trên để xử lý lỗi này. Trả về đúng ID của dịch vụ đó vào trường "service_id". Nếu không có dịch vụ nào phù hợp, trả về null.
+7. BẢO MẬT & SPAM: Nếu nội dung của khách hàng là rác, trêu đùa, hoặc KHÔNG LIÊN QUAN ĐẾN CÁC SỰ CỐ NHÀ CỬA (điện, nước, gia dụng...), hãy đặt "is_spam": true. Ngược lại đặt "is_spam": false.
 
 MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
 "${description}"`;
@@ -208,6 +202,7 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
       responseSchema: {
         type: "OBJECT",
         properties: {
+          is_spam: { type: "BOOLEAN" },
           severity: { type: "STRING" },
           service_id: { type: "INTEGER" },
           suggested_services: { type: "ARRAY", items: { type: "STRING" } },
@@ -217,7 +212,7 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
           predicted_cause: { type: "STRING" },
           suggested_action: { type: "STRING" }
         },
-        required: ["severity", "diagnosis_error", "diagnosis_solution", "safety_tips", "predicted_cause", "suggested_action"]
+        required: ["is_spam", "severity", "diagnosis_error", "diagnosis_solution", "safety_tips", "predicted_cause", "suggested_action"]
       }
     };
 
@@ -229,6 +224,10 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
 
     const responseText = result.response.text();
     const parsed = JSON.parse(responseText);
+
+    if (parsed.is_spam) {
+      throw new Error('SPAM_DETECTED');
+    }
 
     return {
       severity: parsed.severity || 'MEDIUM',
@@ -243,6 +242,9 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
     };
   } catch (err) {
     console.error('[AI Service] diagnoseIssue error:', err.message);
+    if (err.message === 'SPAM_DETECTED') {
+      throw err;
+    }
     // Fallback nếu API lỗi
     return await getSmartMockDiagnosis(description);
   }

@@ -132,9 +132,31 @@ const getDeviceTypes = async (req, res) => {
   }
 };
 
+/**
+ * GET /popular
+ * Public: Lấy danh sách 4 dịch vụ nổi bật dựa trên lượt đặt.
+ */
+const getPopularServices = async (req, res) => {
+  try {
+    const services = await prisma.service.findMany({
+      where: { is_active: true },
+      include: {
+        category: { select: { id: true, name: true } },
+      },
+      orderBy: { bookings: { _count: 'desc' } },
+      take: 4,
+    });
+    return success(res, { services });
+  } catch (err) {
+    console.error('Get popular services error:', err);
+    return error(res, 'Đã xảy ra lỗi khi lấy danh sách dịch vụ nổi bật', 500);
+  }
+};
+
 module.exports = {
   getCategories,
   getServices,
   getServiceById,
   getDeviceTypes,
+  getPopularServices,
 };

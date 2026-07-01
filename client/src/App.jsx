@@ -40,6 +40,7 @@ import TechRatingPage from './pages/technician/TechRatingPage';
 
 // Admin Routes
 import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminReportsPage from './pages/admin/AdminReportsPage';
 import AdminBookingsPage from './pages/admin/AdminBookingsPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminTechniciansPage from './pages/admin/AdminTechniciansPage';
@@ -113,6 +114,7 @@ function App() {
           <Route path="payments" element={<AdminPaymentsPage />} />
           <Route path="payments/:id" element={<AdminPaymentDetailPage />} />
           <Route path="complaints" element={<AdminComplaintsPage />} />
+          <Route path="reports" element={<AdminReportsPage />} />
           <Route path="notifications" element={<NotificationPage />} />
           <Route path="profile" element={<AccountProfilePage />} />
         </Route>

@@ -1,8 +1,3 @@
-// ============================================================
-// HOMEFIX AI — Admin Routes
-// Tất cả routes yêu cầu authMiddleware + roleMiddleware('ADMIN')
-// ============================================================
-
 const express = require('express');
 const router = express.Router();
 
@@ -114,8 +109,9 @@ router.get('/complaints', admin.getComplaints);
 router.put('/complaints/:id/resolve', validate(resolveComplaintSchema), admin.resolveComplaint);
 
 // ========================
-// DASHBOARD
+// DASHBOARD & REPORTS
 // ========================
 router.get('/dashboard', admin.getDashboard);
+router.get('/reports/revenue', admin.getRevenueReport);
 
 module.exports = router;

@@ -158,7 +158,7 @@ const resendOtp = async (req, res) => {
 
     // chong spam
     const lastToken = await prisma.passwordResetToken.findFirst({
-      where: { user_id: user.id },
+      where: { user_id: user.id, used_at: null },
       orderBy: { created_at: 'desc' },
     });
 
@@ -263,7 +263,7 @@ const forgotPassword = async (req, res) => {
 
     // Kiểm tra cooldown
     const lastToken = await prisma.passwordResetToken.findFirst({
-      where: { user_id: user.id },
+      where: { user_id: user.id, used_at: null },
       orderBy: { created_at: 'desc' },
     });
 
@@ -345,6 +345,17 @@ const resetPassword = async (req, res) => {
   }
 };
 
+//Logout
+const logout = async (req, res) => {
+  try {
+    activeSessions.delete(req.user.id);
+    return success(res, null, 'Đăng xuất thành công');
+  } catch (err) {
+    console.error('Logout error:', err);
+    return error(res, 'Đăng xuất thất bại', 500);
+  }
+};
+
 //Get xem tk
 const getMe = async (req, res) => {
   try {
@@ -377,6 +388,15 @@ const getMe = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const { full_name, phone, avatar_url } = req.body;
+
+    if (phone) {
+      const existingPhone = await prisma.user.findFirst({
+        where: { phone, id: { not: req.user.id } }
+      });
+      if (existingPhone) {
+        return error(res, 'Số điện thoại này đã được sử dụng', 409);
+      }
+    }
 
     const user = await prisma.user.update({
       where: { id: req.user.id },
@@ -438,6 +458,7 @@ module.exports = {
   verifyOtp,
   resendOtp,
   login,
+  logout,
   forgotPassword,
   resetPassword,
   getMe,

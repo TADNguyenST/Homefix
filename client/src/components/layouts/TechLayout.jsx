@@ -72,12 +72,14 @@ export default function TechLayout() {
   const selectedKey = menuItems.find(item => location.pathname === item.key || (location.pathname.startsWith(`${item.key}/`) && item.key !== '/technician'))?.key || '/technician';
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider 
         theme="dark" 
         width={260} 
         breakpoint="lg"
         collapsedWidth="0"
+        style={{ overflowY: 'auto', height: '100vh' }}
+        className="hide-scrollbar"
       >
         <div className="sidebar-header">
           <div className="logo-text">
@@ -101,7 +103,7 @@ export default function TechLayout() {
         />
       </Sider>
       
-      <Layout>
+      <Layout style={{ overflowY: 'auto', height: '100vh' }}>
         <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0' }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--navy)' }}>
             Bảng Kỹ thuật viên
@@ -118,7 +120,7 @@ export default function TechLayout() {
           </div>
         </Header>
         
-        <Content className="page-container">
+        <Content style={{ padding: '24px 32px' }}>
           <Outlet />
         </Content>
       </Layout>

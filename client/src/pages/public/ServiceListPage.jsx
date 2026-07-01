@@ -85,8 +85,9 @@ export default function ServiceListPage() {
                 <Card
                   hoverable
                   className="hover-card glass-card"
-                  style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                  style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: 'pointer' }}
                   styles={{ body: { padding: 24, flex: 1, display: 'flex', flexDirection: 'column' } }}
+                  onClick={() => navigate(`/services/${service.id}`)}
                   cover={
                     service.image_url ? (
                       <img
@@ -122,7 +123,6 @@ export default function ServiceListPage() {
                       type="primary"
                       shape="circle"
                       icon={<ArrowRightOutlined />}
-                      onClick={() => navigate(`/services/${service.id}`)}
                     />
                   </div>
                 </Card>
