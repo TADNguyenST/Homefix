@@ -18,7 +18,7 @@ const register = async (req, res) => {
         return error(res, 'Tài khoản gắn với email này đã bị Admin khóa.', 403);
       }
       if (!existingUser.is_active) {
-        return error(res, 'Email đã được đăng ký nhưng chưa xác thực. Vui lòng dùng chức năng "Gửi lại OTP".', 409);
+        return error(res, 'Email đã được đăng ký nhưng chưa xác thực. Vui lòng đăng ký lại để xác thực tài khoản.', 409);
       }
       return error(res, 'Email đã được đăng ký', 409);
     }
@@ -158,7 +158,7 @@ const resendOtp = async (req, res) => {
 
     // chong spam
     const lastToken = await prisma.passwordResetToken.findFirst({
-      where: { user_id: user.id, used_at: null },
+      where: { user_id: user.id },
       orderBy: { created_at: 'desc' },
     });
 
@@ -263,7 +263,7 @@ const forgotPassword = async (req, res) => {
 
     // Kiểm tra cooldown
     const lastToken = await prisma.passwordResetToken.findFirst({
-      where: { user_id: user.id, used_at: null },
+      where: { user_id: user.id },
       orderBy: { created_at: 'desc' },
     });
 
