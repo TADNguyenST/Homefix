@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Table, Button, Typography, Space, Modal, Form, Input, Switch, message, Tag } from 'antd';
-import { EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PlusOutlined, UndoOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
 
@@ -9,14 +9,15 @@ const { TextArea } = Input;
 
 export default function AdminCategoriesPage() {
   const [search, setSearch] = useState('');
+  const [isShowingTrash, setIsShowingTrash] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [form] = Form.useForm();
 
   const { data: catData, isLoading, refetch } = useQuery({
-    queryKey: ['admin-categories', search],
-    queryFn: () => adminApi.getCategories({ search }),
+    queryKey: ['admin-categories', search, isShowingTrash],
+    queryFn: () => adminApi.getCategories({ search, is_deleted: isShowingTrash }),
   });
 
   const categories = catData?.data?.data || catData?.data || [];
@@ -80,6 +81,16 @@ export default function AdminCategoriesPage() {
     });
   };
 
+  const handleRestore = async (id) => {
+    try {
+      await adminApi.updateCategory(id, { is_deleted: false });
+      message.success('Đã khôi phục danh mục');
+      refetch();
+    } catch (err) {
+      message.error(err.response?.data?.message || err.message || 'Lỗi khi khôi phục');
+    }
+  };
+
   const columns = [
     {
       title: 'ID',
@@ -118,10 +129,10 @@ export default function AdminCategoriesPage() {
       title: 'Trạng thái',
       key: 'is_active',
       render: (_, record) => (
-        <Switch 
-          checked={record.is_active} 
-          onChange={(checked) => handleToggleStatus(record, checked)} 
-          checkedChildren="Bật" 
+        <Switch
+          checked={record.is_active}
+          onChange={(checked) => handleToggleStatus(record, checked)}
+          checkedChildren="Bật"
           unCheckedChildren="Tắt"
         />
       ),
@@ -131,11 +142,19 @@ export default function AdminCategoriesPage() {
       key: 'action',
       render: (_, record) => (
         <Space>
-          <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} />
-          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+          {isShowingTrash ? (
+            <Button type="primary" ghost icon={<UndoOutlined />} onClick={() => handleRestore(record.id)}>
+              Khôi phục
+            </Button>
+          ) : (
+            <>
+              <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} />
+              <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+            </>
+          )}
         </Space>
       ),
-      width: 120,
+      width: 130,
     },
   ];
 
@@ -146,26 +165,39 @@ export default function AdminCategoriesPage() {
           <Title level={2} style={{ color: 'var(--navy)', marginBottom: 8 }}>Quản lý Danh mục</Title>
           <p>Danh mục các nhóm dịch vụ sửa chữa</p>
         </div>
-        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
-          Thêm danh mục
-        </Button>
+        <Space>
+          <Button
+            type={isShowingTrash ? "default" : "dashed"}
+            size="large"
+            danger={!isShowingTrash}
+            icon={isShowingTrash ? null : <DeleteOutlined />}
+            onClick={() => setIsShowingTrash(!isShowingTrash)}
+          >
+            {isShowingTrash ? "Quay lại danh sách" : "Đã xóa"}
+          </Button>
+          {!isShowingTrash && (
+            <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
+              Thêm danh mục
+            </Button>
+          )}
+        </Space>
       </div>
 
       <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
-        
+
         {/* Lọc và Tìm kiếm */}
         <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <Input.Search 
-            placeholder="Tìm danh mục theo tên" 
-            allowClear 
+          <Input.Search
+            placeholder="Tìm danh mục theo tên"
+            allowClear
             onSearch={(value) => setSearch(value)}
             style={{ width: 300 }}
           />
         </div>
 
-        <Table 
-          columns={columns} 
-          dataSource={categories} 
+        <Table
+          columns={columns}
+          dataSource={categories}
           rowKey="id"
           loading={isLoading}
           pagination={{ pageSize: 15 }}
@@ -183,7 +215,7 @@ export default function AdminCategoriesPage() {
           <Form.Item name="name" label="Tên danh mục" rules={[{ required: true, message: 'Vui lòng nhập tên danh mục' }]}>
             <Input placeholder="Vd: Sửa Điện Lạnh" />
           </Form.Item>
-          
+
           <Form.Item name="icon_url" label="Icon URL (Tùy chọn)">
             <Input placeholder="Vd: https://example.com/icon.png" />
           </Form.Item>

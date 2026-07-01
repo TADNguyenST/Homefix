@@ -157,4 +157,40 @@ const sendWelcomeEmail = async (to, name) => {
   }
 };
 
-module.exports = { sendOtpEmail, generateOtp, verifyMailConnection, sendWelcomeEmail };
+/**
+ * Gửi email thông tin tài khoản cho kỹ thuật viên
+ * @param {string} to - Email người nhận
+ * @param {string} name - Tên thợ
+ * @param {string} password - Mật khẩu mặc định
+ */
+const sendTechnicianAccountEmail = async (to, name, password) => {
+  const transporter = getTransporter();
+  if (!transporter) return;
+
+  try {
+    await transporter.sendMail({
+      from: `"HomeFix" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: '🔧 Tài khoản Kỹ thuật viên HomeFix đã được tạo',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #2563eb;">🔧 HomeFix - Kỹ thuật viên</h2>
+          <p>Xin chào <b>${name}</b>,</p>
+          <p>Tài khoản kỹ thuật viên của bạn trên hệ thống HomeFix đã được quản trị viên tạo thành công. Dưới đây là thông tin đăng nhập của bạn:</p>
+          <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><b>Email đăng nhập:</b> ${to}</p>
+            <p style="margin: 5px 0;"><b>Mật khẩu mặc định:</b> <span style="color: #dc2626;">${password}</span></p>
+          </div>
+          <p><i>Lưu ý: Bạn nên đăng nhập vào ứng dụng và thay đổi mật khẩu này ngay lập tức để bảo đảm an toàn.</i></p>
+          <p style="margin-top: 30px;">Chào mừng bạn gia nhập đội ngũ HomeFix!</p>
+          <p style="color: #64748b; font-size: 14px;"><i>Đội ngũ HomeFix</i></p>
+        </div>
+      `,
+    });
+    console.log(`[MAILER] ✅ Đã gửi email thông tin tài khoản thợ đến ${to}`);
+  } catch (err) {
+    console.error(`[MAILER] ❌ Lỗi gửi email tài khoản thợ đến ${to}:`, err.message);
+  }
+};
+
+module.exports = { sendOtpEmail, generateOtp, verifyMailConnection, sendWelcomeEmail, sendTechnicianAccountEmail };

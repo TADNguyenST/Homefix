@@ -33,7 +33,7 @@ export default function AdminLayout() {
     {
       key: '/admin',
       icon: <DashboardOutlined />,
-      label: <Link to="/admin">Dashboard</Link>,
+      label: <Link to="/admin">Tổng quan</Link>,
     },
     {
       key: '/admin/bookings',

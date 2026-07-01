@@ -120,6 +120,7 @@ model ServiceCategory {
   description String?  @db.Text
   icon_url    String?  @db.VarChar(500)
   is_active   Boolean  @default(true)
+  is_deleted  Boolean  @default(false)
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
@@ -138,6 +139,7 @@ model Service {
   estimated_duration Int
   image_url          String?  @db.VarChar(500)
   is_active          Boolean  @default(true)
+  is_deleted         Boolean  @default(false)
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
 
@@ -154,6 +156,7 @@ model DeviceType {
   name        String   @db.VarChar(100)
   description String?  @db.Text
   is_active   Boolean  @default(true)
+  is_deleted  Boolean  @default(false)
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 

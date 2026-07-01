@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Table, Button, Typography, Space, Modal, Form, Input, InputNumber, Select, Switch, message, Tag, Upload } from 'antd';
-import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined, UndoOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
 import axiosClient from '../../api/axiosClient';
@@ -16,6 +16,7 @@ export default function AdminServicesPage() {
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState(null);
   const [filterStatus, setFilterStatus] = useState(null);
+  const [isShowingTrash, setIsShowingTrash] = useState(false);
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -24,11 +25,12 @@ export default function AdminServicesPage() {
   const [uploading, setUploading] = useState(false);
 
   const { data: srvData, isLoading, refetch } = useQuery({
-    queryKey: ['admin-services', search, filterCategory, filterStatus],
+    queryKey: ['admin-services', search, filterCategory, filterStatus, isShowingTrash],
     queryFn: () => adminApi.getServices({
       search,
       category_id: filterCategory,
-      is_active: filterStatus
+      is_active: filterStatus,
+      is_deleted: isShowingTrash
     }),
   });
 
@@ -104,6 +106,16 @@ export default function AdminServicesPage() {
     });
   };
 
+  const handleRestore = async (id) => {
+    try {
+      await adminApi.updateService(id, { is_deleted: false });
+      message.success('Đã khôi phục dịch vụ');
+      refetch();
+    } catch (err) {
+      message.error(err.response?.data?.message || err.message || 'Lỗi khi khôi phục');
+    }
+  };
+
   // Custom upload handler
   const handleUpload = async (info) => {
     const formData = new FormData();
@@ -169,10 +181,10 @@ export default function AdminServicesPage() {
       title: 'Trạng thái',
       key: 'is_active',
       render: (_, record) => (
-        <Switch 
-          checked={record.is_active} 
-          onChange={(checked) => handleToggleStatus(record, checked)} 
-          checkedChildren="Bật" 
+        <Switch
+          checked={record.is_active}
+          onChange={(checked) => handleToggleStatus(record, checked)}
+          checkedChildren="Bật"
           unCheckedChildren="Tắt"
         />
       ),
@@ -183,16 +195,24 @@ export default function AdminServicesPage() {
       key: 'action',
       render: (_, record) => (
         <Space>
-          <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} />
-          <Button
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => handleDelete(record)}
-          />
+          {isShowingTrash ? (
+            <Button type="primary" ghost icon={<UndoOutlined />} onClick={() => handleRestore(record.id)}>
+              Khôi phục
+            </Button>
+          ) : (
+            <>
+              <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} />
+              <Button
+                type="text"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => handleDelete(record)}
+              />
+            </>
+          )}
         </Space>
       ),
-      width: 120,
+      width: 130,
     },
   ];
 
@@ -203,24 +223,37 @@ export default function AdminServicesPage() {
           <Title level={2} style={{ color: 'var(--navy)', marginBottom: 8 }}>Quản lý Dịch vụ</Title>
           <p>Các dịch vụ chi tiết cung cấp cho khách hàng</p>
         </div>
-        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
-          Thêm dịch vụ
-        </Button>
+        <Space>
+          <Button
+            type={isShowingTrash ? "default" : "dashed"}
+            size="large"
+            danger={!isShowingTrash}
+            icon={isShowingTrash ? null : <DeleteOutlined />}
+            onClick={() => setIsShowingTrash(!isShowingTrash)}
+          >
+            {isShowingTrash ? "Quay lại danh sách" : "Đã xóa"}
+          </Button>
+          {!isShowingTrash && (
+            <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
+              Thêm dịch vụ
+            </Button>
+          )}
+        </Space>
       </div>
 
       <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
-        
+
         {/* Lọc và Tìm kiếm */}
         <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <Input.Search 
-            placeholder="Tìm dịch vụ theo tên" 
-            allowClear 
+          <Input.Search
+            placeholder="Tìm dịch vụ theo tên"
+            allowClear
             onSearch={(value) => setSearch(value)}
             style={{ width: 300 }}
           />
-          <Select 
-            placeholder="Lọc theo danh mục" 
-            allowClear 
+          <Select
+            placeholder="Lọc theo danh mục"
+            allowClear
             style={{ width: 200 }}
             onChange={(val) => setFilterCategory(val)}
           >
@@ -228,9 +261,9 @@ export default function AdminServicesPage() {
               <Select.Option key={c.id} value={c.id}>{c.name}</Select.Option>
             ))}
           </Select>
-          <Select 
-            placeholder="Lọc theo trạng thái" 
-            allowClear 
+          <Select
+            placeholder="Lọc theo trạng thái"
+            allowClear
             style={{ width: 180 }}
             onChange={(val) => setFilterStatus(val)}
           >
@@ -239,9 +272,9 @@ export default function AdminServicesPage() {
           </Select>
         </div>
 
-        <Table 
-          columns={columns} 
-          dataSource={services} 
+        <Table
+          columns={columns}
+          dataSource={services}
           rowKey="id"
           loading={isLoading}
           pagination={{ pageSize: 15 }}
@@ -265,7 +298,7 @@ export default function AdminServicesPage() {
           <Form.Item name="name" label="Tên dịch vụ" rules={[{ required: true, message: 'Vui lòng nhập tên dịch vụ' }]}>
             <Input placeholder="Vd: Vệ sinh máy lạnh" />
           </Form.Item>
-          
+
           <div style={{ display: 'flex', gap: 16 }}>
             <Form.Item name="base_price" label="Giá kiểm tra cơ bản (VNĐ)" rules={[{ required: true, message: 'Nhập giá cơ bản' }]} style={{ flex: 1 }}>
               <InputNumber style={{ width: '100%' }} step={10000} />
@@ -274,7 +307,7 @@ export default function AdminServicesPage() {
               <InputNumber style={{ width: '100%' }} min={10} step={15} placeholder="VD: 60" />
             </Form.Item>
           </div>
-          
+
           {/* Upload ảnh từ máy hoặc dán link */}
           <Form.Item label="Hình ảnh dịch vụ">
             <Space direction="vertical" style={{ width: '100%' }}>
@@ -291,10 +324,10 @@ export default function AdminServicesPage() {
                 <Input placeholder="Hoặc dán URL ảnh tại đây" />
               </Form.Item>
               {form.getFieldValue('image_url') && (
-                <img 
-                  src={form.getFieldValue('image_url')} 
-                  alt="Preview" 
-                  style={{ width: '100%', maxHeight: 160, objectFit: 'cover', borderRadius: 8, marginTop: 8, border: '1px solid #e2e8f0' }} 
+                <img
+                  src={form.getFieldValue('image_url')}
+                  alt="Preview"
+                  style={{ width: '100%', maxHeight: 160, objectFit: 'cover', borderRadius: 8, marginTop: 8, border: '1px solid #e2e8f0' }}
                 />
               )}
             </Space>
