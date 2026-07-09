@@ -120,6 +120,19 @@ const notifyBookingCompleted = async (customerId, bookingId) => {
   );
 };
 
+const notifyAwaitingPayment = async (customerId, bookingId, paymentMethod) => {
+  const instruction = paymentMethod === 'VNPAY'
+    ? 'Vui lòng thanh toán VNPAY để hoàn tất đơn.'
+    : 'Vui lòng thanh toán tiền mặt cho kỹ thuật viên.';
+  await createNotification(
+    customerId,
+    'Sửa chữa đã hoàn tất - Chờ thanh toán',
+    `Kỹ thuật viên đã hoàn tất sửa chữa đơn #${bookingId}. ${instruction}`,
+    NOTIFICATION_TYPE.PAYMENT,
+    bookingId
+  );
+};
+
 const notifyNewReview = async (techUserId, bookingId, rating) => {
   await createNotification(
     techUserId,
@@ -169,6 +182,7 @@ module.exports = {
   notifyQuotationSent,
   notifyQuotationResponse,
   notifyPaymentSuccess,
+  notifyAwaitingPayment,
   notifyBookingCompleted,
   notifyNewReview,
   notifyNewComplaint,

@@ -5,15 +5,36 @@
 
 const { z } = require('zod');
 
+const TEMP_EMAIL_DOMAINS = [
+  'yopmail.com', '10minutemail.com', 'mailinator.com', 
+  'tempmail.com', 'guerrillamail.com', 'dropmail.me', 
+  'dispostable.com', 'temp-mail.org'
+];
+
+const numericInput = (schema) => z.preprocess((value) => {
+  if (typeof value === 'string') {
+    const normalized = value.replace(/,/g, '').trim();
+    return normalized === '' ? undefined : Number(normalized);
+  }
+  return value;
+}, schema);
+
 // ========================
 // AUTH
 // ========================
 
 const registerSchema = z.object({
-  email: z.string().email('Email không hợp lệ'),
-  password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự').max(100),
+  email: z.string().email('Email không hợp lệ').refine(email => {
+    const domain = email.split('@')[1];
+    return !TEMP_EMAIL_DOMAINS.includes(domain.toLowerCase());
+  }, { message: 'Hệ thống không chấp nhận địa chỉ email tạm thời' }),
+  password: z.string().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/, 'Mật khẩu phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt').max(100),
+  confirm_password: z.string().min(1, 'Vui lòng xác nhận mật khẩu'),
   full_name: z.string().min(2, 'Họ tên tối thiểu 2 ký tự').max(100),
   phone: z.string().regex(/^(0[3-9])\d{8}$/, 'Số điện thoại không hợp lệ (VD: 0901234567)').optional(),
+}).refine((data) => data.password === data.confirm_password, {
+  message: "Mật khẩu xác nhận không khớp",
+  path: ["confirm_password"],
 });
 
 const loginSchema = z.object({
@@ -33,7 +54,11 @@ const forgotPasswordSchema = z.object({
 const resetPasswordSchema = z.object({
   email: z.string().email('Email không hợp lệ'),
   otp_code: z.string().length(6, 'Mã OTP phải đúng 6 số'),
-  new_password: z.string().min(6, 'Mật khẩu mới tối thiểu 6 ký tự').max(100),
+  new_password: z.string().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/, 'Mật khẩu mới phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt').max(100),
+  confirm_password: z.string().min(1, 'Vui lòng xác nhận mật khẩu'),
+}).refine((data) => data.new_password === data.confirm_password, {
+  message: "Mật khẩu xác nhận không khớp",
+  path: ["confirm_password"],
 });
 
 const updateProfileSchema = z.object({
@@ -44,7 +69,7 @@ const updateProfileSchema = z.object({
 
 const changePasswordSchema = z.object({
   current_password: z.string().min(1, 'Vui lòng nhập mật khẩu hiện tại'),
-  new_password: z.string().min(6, 'Mật khẩu mới tối thiểu 6 ký tự').max(100),
+  new_password: z.string().regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/, 'Mật khẩu mới phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt').max(100),
 });
 
 // ========================
@@ -64,6 +89,7 @@ const updateAddressSchema = z.object({
   ward_id: z.number().int().positive().optional(),
   address_detail: z.string().min(5).max(500).optional(),
   label: z.string().max(50).optional(),
+  is_default: z.boolean().optional(),
 });
 
 // ========================
@@ -83,6 +109,8 @@ const createBookingSchema = z.object({
   time_slot_end: z.string().regex(/^\d{2}:\d{2}$/, 'Giờ kết thúc format HH:mm'),
   payment_method: z.enum(['VNPAY', 'CASH'], { errorMap: () => ({ message: 'Phương thức: VNPAY hoặc CASH' }) }),
   voucher_code: z.string().optional().nullable(),
+  ai_diagnosis: z.string().max(2000).optional().nullable(),
+  image_urls: z.array(z.string().min(1).max(500)).max(3, 'Tối đa 3 ảnh cho mỗi booking').optional().default([]),
 });
 
 const rescheduleBookingSchema = z.object({
@@ -92,8 +120,8 @@ const rescheduleBookingSchema = z.object({
 });
 
 const updateJobStatusSchema = z.object({
-  new_status: z.enum(['INSPECTING', 'COMPLETING', 'COMPLETED'], {
-    errorMap: () => ({ message: 'Trạng thái hợp lệ: INSPECTING, COMPLETING, COMPLETED' }),
+  new_status: z.enum(['INSPECTING', 'COMPLETING', 'AWAITING_PAYMENT'], {
+    errorMap: () => ({ message: 'Trạng thái hợp lệ: INSPECTING, COMPLETING, AWAITING_PAYMENT' }),
   }),
   note: z.string().max(1000).optional().nullable(),
 });
@@ -106,8 +134,8 @@ const createQuotationSchema = z.object({
   note: z.string().max(2000).optional().nullable(),
   items: z.array(z.object({
     item_name: z.string().min(1, 'Tên hạng mục không được trống').max(200),
-    quantity: z.number().int().min(1, 'Số lượng tối thiểu 1').default(1),
-    unit_price: z.number().min(0, 'Đơn giá không được âm'),
+    quantity: numericInput(z.number().int().min(1, 'Số lượng tối thiểu 1').default(1)),
+    unit_price: numericInput(z.number().min(0, 'Đơn giá không được âm')),
   })).min(1, 'Phải có ít nhất 1 hạng mục báo giá'),
 });
 
@@ -159,6 +187,7 @@ const createDeviceTypeSchema = z.object({
   name: z.string().min(2, 'Tên loại thiết bị tối thiểu 2 ký tự').max(100),
   description: z.string().max(2000).optional().nullable(),
   is_active: z.boolean().optional().default(true),
+  category_id: z.number().int().positive().optional().nullable(),
 });
 
 const createDistrictSchema = z.object({
@@ -256,9 +285,10 @@ const validate = (schema) => {
           field: e.path.join('.'),
           message: e.message,
         }));
+        const errorMessage = errors.map(e => e.message).join('. ');
         return res.status(400).json({
           success: false,
-          message: 'Dữ liệu không hợp lệ',
+          message: errorMessage,
           errors,
         });
       }

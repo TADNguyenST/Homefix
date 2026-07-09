@@ -1,8 +1,9 @@
 import axiosClient from './axiosClient';
 
 export const adminApi = {
-  // Dashboard
+  // DASHBOARD & REPORTS
   getDashboard: () => axiosClient.get('/admin/dashboard'),
+  getRevenueReport: (params) => axiosClient.get('/admin/reports/revenue', { params }),
 
   // Bookings
   getBookings: (params) => axiosClient.get('/admin/bookings', { params }),
@@ -26,25 +27,25 @@ export const adminApi = {
   updateTechSchedule: (id, data) => axiosClient.put(`/admin/technicians/${id}/schedule`, data),
 
   // Categories
-  getCategories: () => axiosClient.get('/admin/categories'),
+  getCategories: (params) => axiosClient.get('/admin/categories', { params }),
   createCategory: (data) => axiosClient.post('/admin/categories', data),
   updateCategory: (id, data) => axiosClient.put(`/admin/categories/${id}`, data),
   deleteCategory: (id) => axiosClient.delete(`/admin/categories/${id}`),
 
   // Services
-  getServices: () => axiosClient.get('/admin/services'),
+  getServices: (params) => axiosClient.get('/admin/services', { params }),
   createService: (data) => axiosClient.post('/admin/services', data),
   updateService: (id, data) => axiosClient.put(`/admin/services/${id}`, data),
   deleteService: (id) => axiosClient.delete(`/admin/services/${id}`),
 
   // Device Types
-  getDeviceTypes: () => axiosClient.get('/admin/device-types'),
+  getDeviceTypes: (params) => axiosClient.get('/admin/device-types', { params }),
   createDeviceType: (data) => axiosClient.post('/admin/device-types', data),
   updateDeviceType: (id, data) => axiosClient.put(`/admin/device-types/${id}`, data),
   deleteDeviceType: (id) => axiosClient.delete(`/admin/device-types/${id}`),
 
   // Districts & Wards
-  getDistricts: () => axiosClient.get('/admin/districts'),
+  getDistricts: (params) => axiosClient.get('/admin/districts', { params }),
   createDistrict: (data) => axiosClient.post('/admin/districts', data),
   updateDistrict: (id, data) => axiosClient.put(`/admin/districts/${id}`, data),
   deleteDistrict: (id) => axiosClient.delete(`/admin/districts/${id}`),
@@ -57,14 +58,18 @@ export const adminApi = {
   createVoucher: (data) => axiosClient.post('/admin/vouchers', data),
   updateVoucher: (id, data) => axiosClient.put(`/admin/vouchers/${id}`, data),
   toggleVoucher: (id) => axiosClient.put(`/admin/vouchers/${id}/toggle`),
+  getVoucherUsages: (id, params) => axiosClient.get(`/admin/vouchers/${id}/usages`, { params }),
 
   // Payments
   getPayments: (params) => axiosClient.get('/admin/payments', { params }),
+  getPaymentById: (id) => axiosClient.get(`/admin/payments/${id}`),
+  confirmCashSettlement: (id, data = {}) => axiosClient.put(`/admin/payments/${id}/confirm-cash-settlement`, data),
 
   // Complaints
   getComplaints: (params) => axiosClient.get('/admin/complaints', { params }),
   resolveComplaint: (id, data) => axiosClient.put(`/admin/complaints/${id}/resolve`, data),
 
   // AI
-  recommendTech: (bookingId) => axiosClient.get(`/ai/recommend-tech/${bookingId}`),
+  recommendTech: (bookingId) => axiosClient.get(`/ai/recommend-tech/${bookingId}?_t=${Date.now()}`),
 };
+

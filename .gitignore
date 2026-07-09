@@ -6,6 +6,7 @@ pw.txt
 .env
 .env.*
 !.env.example
+server/env.txt
 
 # Node modules
 node_modules/

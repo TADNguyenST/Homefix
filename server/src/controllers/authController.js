@@ -1,35 +1,46 @@
-// ============================================================
-// HOMEFIX AI — Auth Controller (Full OTP Flow)
-// ============================================================
-
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const prisma = require('../utils/prisma');
 const { success, error } = require('../utils/response');
 const { sendOtpEmail, generateOtp, sendWelcomeEmail } = require('../utils/mailer');
 const { BUSINESS_RULES, ROLES } = require('../config/constants');
+const activeSessions = require('../utils/sessionStore');
 
-// ========================
-// REGISTER — Tạo tài khoản + Gửi OTP qua email
-// ========================
+
 const register = async (req, res) => {
   try {
     const { email, password, full_name, phone } = req.body;
 
-    // Kiểm tra email đã tồn tại
+    // Check Email
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      // Nếu user đã tồn tại nhưng chưa active → cho phép gửi lại OTP
+      if (existingUser.is_locked) {
+        return error(res, 'Tài khoản gắn với email này đã bị Admin khóa.', 403);
+      }
       if (!existingUser.is_active) {
-        return error(res, 'Email đã được đăng ký nhưng chưa xác thực. Vui lòng dùng chức năng "Gửi lại OTP".', 409);
+        return error(res, 'Email đã được đăng ký nhưng chưa xác thực. Vui lòng đăng ký lại để xác thực tài khoản.', 409);
       }
       return error(res, 'Email đã được đăng ký', 409);
+    }
+
+    // Check sdt
+    if (phone) {
+      const existingPhone = await prisma.user.findFirst({ where: { phone } });
+      if (existingPhone) {
+        if (existingPhone.is_locked) {
+          return error(res, 'Số điện thoại này thuộc về tài khoản đã bị Admin khóa.', 403);
+        }
+        if (!existingPhone.is_active) {
+          return error(res, 'Số điện thoại đã được liên kết với một tài khoản chưa xác thực.', 409);
+        }
+        return error(res, 'Số điện thoại đã được đăng ký', 409);
+      }
     }
 
     // Hash password
     const password_hash = await bcrypt.hash(password, BUSINESS_RULES.SALT_ROUNDS);
 
-    // Tạo user mới (is_active = false, chờ verify OTP)
+    // Đủ dk tạo user
     const user = await prisma.user.create({
       data: {
         email,
@@ -37,12 +48,12 @@ const register = async (req, res) => {
         full_name,
         phone: phone || null,
         role: ROLES.CUSTOMER,
-        is_active: false, // Chờ xác thực OTP mới kích hoạt
+        is_active: false, // 
       },
       select: { id: true, email: true, full_name: true, role: true },
     });
 
-    // Tạo OTP và lưu vào bảng PasswordResetToken (dùng chung cho register & reset)
+    // Tạo OTP 
     const otpCode = generateOtp();
     const expiresAt = new Date(Date.now() + BUSINESS_RULES.OTP_EXPIRY_MINUTES * 60 * 1000);
 
@@ -59,7 +70,7 @@ const register = async (req, res) => {
       await sendOtpEmail(email, otpCode, 'register');
     } catch (emailErr) {
       console.error('Register — gửi email thất bại:', emailErr.message);
-      // Vẫn trả về thành công vì user đã được tạo, nhưng cảnh báo về email
+      // 
       return success(res, { user }, 'Đăng ký thành công! Tuy nhiên gửi email OTP bị lỗi. Vui lòng dùng chức năng "Gửi lại OTP".', 201);
     }
 
@@ -70,9 +81,7 @@ const register = async (req, res) => {
   }
 };
 
-// ========================
-// VERIFY OTP — Xác thực tài khoản (kích hoạt is_active = true)
-// ========================
+//Active tk 
 const verifyOtp = async (req, res) => {
   try {
     const { email, otp_code } = req.body;
@@ -81,6 +90,10 @@ const verifyOtp = async (req, res) => {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return error(res, 'Email không tồn tại trong hệ thống', 404);
+    }
+
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa, không thể xác thực OTP.', 403);
     }
 
     // Nếu đã active rồi thì không cần verify nữa
@@ -103,7 +116,7 @@ const verifyOtp = async (req, res) => {
       return error(res, 'Mã OTP không hợp lệ hoặc đã hết hạn', 400);
     }
 
-    // Đánh dấu OTP đã sử dụng & kích hoạt tài khoản
+    // Đánh dấu OTP đã sử dụng và kích hoạt tài khoản
     await prisma.$transaction([
       prisma.passwordResetToken.update({
         where: { id: token.id },
@@ -115,7 +128,7 @@ const verifyOtp = async (req, res) => {
       }),
     ]);
 
-    // Gửi email chào mừng (chạy ngầm, không await để không làm chậm API)
+    // Gửi email chào
     sendWelcomeEmail(user.email, user.full_name).catch(err => console.error(err));
 
     return success(res, null, 'Xác thực thành công! Tài khoản đã được kích hoạt.');
@@ -125,9 +138,7 @@ const verifyOtp = async (req, res) => {
   }
 };
 
-// ========================
-// RESEND OTP — Gửi lại mã OTP (cho Register)
-// ========================
+//Gửi lại mã
 const resendOtp = async (req, res) => {
   try {
     const { email } = req.body;
@@ -137,11 +148,15 @@ const resendOtp = async (req, res) => {
       return error(res, 'Email không tồn tại trong hệ thống', 404);
     }
 
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa, không thể gửi lại OTP.', 403);
+    }
+
     if (user.is_active) {
       return error(res, 'Tài khoản đã được kích hoạt, không cần gửi lại OTP', 400);
     }
 
-    // Kiểm tra cooldown (chống spam gửi liên tục)
+    // chong spam
     const lastToken = await prisma.passwordResetToken.findFirst({
       where: { user_id: user.id },
       orderBy: { created_at: 'desc' },
@@ -176,9 +191,7 @@ const resendOtp = async (req, res) => {
   }
 };
 
-// ========================
-// LOGIN — Đăng nhập (kiểm tra is_active)
-// ========================
+//Login
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -188,12 +201,16 @@ const login = async (req, res) => {
       return error(res, 'Email hoặc mật khẩu không đúng', 401);
     }
 
-    // Kiểm tra tài khoản đã kích hoạt chưa
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa.', 403);
+    }
+
+    // Check đã Active
     if (!user.is_active) {
       return error(res, 'Tài khoản chưa được xác thực. Vui lòng kiểm tra email để nhập mã OTP.', 403);
     }
 
-    // So sánh password
+    // So pass
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
       return error(res, 'Email hoặc mật khẩu không đúng', 401);
@@ -206,6 +223,9 @@ const login = async (req, res) => {
       { expiresIn: BUSINESS_RULES.JWT_EXPIRY }
     );
 
+    // Lưu token mới đá cũ 
+    activeSessions.set(user.id, token);
+
     return success(res, {
       token,
       user: {
@@ -213,6 +233,7 @@ const login = async (req, res) => {
         email: user.email,
         full_name: user.full_name,
         role: user.role,
+        phone: user.phone,
         avatar_url: user.avatar_url,
       },
     }, 'Đăng nhập thành công');
@@ -222,17 +243,18 @@ const login = async (req, res) => {
   }
 };
 
-// ========================
-// FORGOT PASSWORD — Gửi OTP để đặt lại mật khẩu
-// ========================
+//Quên mk
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      // Không tiết lộ email có tồn tại hay không (bảo mật)
       return success(res, null, 'Nếu email tồn tại, chúng tôi đã gửi mã OTP. Vui lòng kiểm tra hộp thư.');
+    }
+
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa, không thể đặt lại mật khẩu.', 403);
     }
 
     if (!user.is_active) {
@@ -273,9 +295,7 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// ========================
-// RESET PASSWORD — Đặt lại mật khẩu bằng OTP
-// ========================
+//Đặt lại pass gửi otp
 const resetPassword = async (req, res) => {
   try {
     const { email, otp_code, new_password } = req.body;
@@ -283,6 +303,10 @@ const resetPassword = async (req, res) => {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return error(res, 'Thông tin không hợp lệ', 400);
+    }
+
+    if (user.is_locked) {
+      return error(res, 'Tài khoản đã bị Admin khóa, không thể đặt lại mật khẩu.', 403);
     }
 
     // Tìm OTP hợp lệ
@@ -321,9 +345,18 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// ========================
-// GET ME — Xem thông tin cá nhân
-// ========================
+//Logout
+const logout = async (req, res) => {
+  try {
+    activeSessions.delete(req.user.id);
+    return success(res, null, 'Đăng xuất thành công');
+  } catch (err) {
+    console.error('Logout error:', err);
+    return error(res, 'Đăng xuất thất bại', 500);
+  }
+};
+
+//Get xem tk
 const getMe = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
@@ -351,12 +384,19 @@ const getMe = async (req, res) => {
   }
 };
 
-// ========================
-// UPDATE PROFILE — Cập nhật hồ sơ
-// ========================
+//Update tk
 const updateProfile = async (req, res) => {
   try {
     const { full_name, phone, avatar_url } = req.body;
+
+    if (phone) {
+      const existingPhone = await prisma.user.findFirst({
+        where: { phone, id: { not: req.user.id } }
+      });
+      if (existingPhone) {
+        return error(res, 'Số điện thoại này đã được sử dụng', 409);
+      }
+    }
 
     const user = await prisma.user.update({
       where: { id: req.user.id },
@@ -382,9 +422,8 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// ========================
-// CHANGE PASSWORD — Đổi mật khẩu (đã đăng nhập)
-// ========================
+
+//Đổi pass khi đã đăng nhập
 const changePassword = async (req, res) => {
   try {
     const { current_password, new_password } = req.body;
@@ -419,6 +458,7 @@ module.exports = {
   verifyOtp,
   resendOtp,
   login,
+  logout,
   forgotPassword,
   resetPassword,
   getMe,

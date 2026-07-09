@@ -34,6 +34,10 @@ export default function LandingPage() {
   const { data: servicesData } = useQuery({ queryKey: ['services'], queryFn: () => serviceApi.getAll() });
   const services = servicesData?.data?.data || servicesData?.data || [];
 
+  // Fetch popular services
+  const { data: popularData } = useQuery({ queryKey: ['popular-services'], queryFn: () => serviceApi.getPopular() });
+  const rawPopularServices = popularData?.data?.services || popularData?.data || [];
+
   const sampleProblems = [
     "Điều hòa chảy nước lênh láng ở dàn lạnh",
     "Ổ cắm điện phòng khách bị nổ chập chập cháy đen",
@@ -121,7 +125,7 @@ export default function LandingPage() {
     return '🔧';
   };
 
-  const popularServices = services.slice(0, 4).map((s, idx) => {
+  const popularServices = rawPopularServices.map((s, idx) => {
     const catName = s.category?.name || s.Category?.name || '';
     return {
       id: s.id,
@@ -414,7 +418,7 @@ export default function LandingPage() {
                   </div>
                 }
                 styles={{ body: { padding: '20px 24px', display: 'flex', flexDirection: 'column' } }}
-                onClick={() => navigate('/services')}
+                onClick={() => navigate(`/services/${service.id}`)}
               >
                 <Title level={4} style={{ marginBottom: 8, color: 'var(--navy)', fontWeight: 600, fontSize: 17 }}>{service.title}</Title>
                 <Text type="secondary" style={{ flex: 1, marginBottom: 20, fontSize: 13, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{service.desc}</Text>

@@ -40,6 +40,7 @@ import TechRatingPage from './pages/technician/TechRatingPage';
 
 // Admin Routes
 import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminReportsPage from './pages/admin/AdminReportsPage';
 import AdminBookingsPage from './pages/admin/AdminBookingsPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminTechniciansPage from './pages/admin/AdminTechniciansPage';
@@ -49,6 +50,7 @@ import AdminDeviceTypesPage from './pages/admin/AdminDeviceTypesPage';
 import AdminDistrictsPage from './pages/admin/AdminDistrictsPage';
 import AdminVouchersPage from './pages/admin/AdminVouchersPage';
 import AdminPaymentsPage from './pages/admin/AdminPaymentsPage';
+import AdminPaymentDetailPage from './pages/admin/AdminPaymentDetailPage';
 import AdminComplaintsPage from './pages/admin/AdminComplaintsPage';
 
 function App() {
@@ -110,7 +112,9 @@ function App() {
           <Route path="districts" element={<AdminDistrictsPage />} />
           <Route path="vouchers" element={<AdminVouchersPage />} />
           <Route path="payments" element={<AdminPaymentsPage />} />
+          <Route path="payments/:id" element={<AdminPaymentDetailPage />} />
           <Route path="complaints" element={<AdminComplaintsPage />} />
+          <Route path="reports" element={<AdminReportsPage />} />
           <Route path="notifications" element={<NotificationPage />} />
           <Route path="profile" element={<AccountProfilePage />} />
         </Route>

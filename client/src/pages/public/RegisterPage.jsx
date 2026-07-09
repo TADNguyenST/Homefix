@@ -1,12 +1,11 @@
-import { Form, Input, Button, Card, Typography, Divider, message, Select, Modal } from 'antd';
+import { Form, Input, Button, Card, Typography, Divider, message, Modal } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined, PhoneOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { useState } from 'react';
+import { authApi } from '../../api/authApi';
+import { useState, useEffect } from 'react';
 
 const { Title, Text } = Typography;
-const { Option } = Select;
-
 export default function RegisterPage() {
   const { register, verifyOtp } = useAuth();
   const navigate = useNavigate();
@@ -14,14 +13,26 @@ export default function RegisterPage() {
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const [form] = Form.useForm();
   const [otpForm] = Form.useForm();
+
+  useEffect(() => {
+    let timer;
+    if (otpModalVisible && countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [otpModalVisible, countdown]);
 
   const onFinish = async (values) => {
     try {
       setLoading(true);
       await register(values);
       setRegisteredEmail(values.email);
+      setCountdown(60);
       setOtpModalVisible(true);
       message.success('Đăng ký thành công! Vui lòng kiểm tra email để lấy mã OTP.');
     } catch (err) {
@@ -40,6 +51,19 @@ export default function RegisterPage() {
       navigate('/login');
     } catch (err) {
       message.error(err.message || 'Xác thực OTP thất bại');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    try {
+      setOtpLoading(true);
+      await authApi.resendOtp({ email: registeredEmail });
+      message.success('Đã gửi lại mã OTP. Vui lòng kiểm tra email!');
+      setCountdown(60);
+    } catch (err) {
+      message.error(err.response?.data?.message || err.message || 'Gửi lại mã thất bại');
     } finally {
       setOtpLoading(false);
     }
@@ -87,9 +111,33 @@ export default function RegisterPage() {
 
           <Form.Item
             name="password"
-            rules={[{ required: true, message: 'Vui lòng nhập mật khẩu!', min: 6 }]}
+            rules={[
+              { required: true, message: 'Vui lòng nhập mật khẩu!' },
+              {
+                pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/,
+                message: 'Mật khẩu phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt',
+              },
+            ]}
           >
             <Input.Password prefix={<LockOutlined />} placeholder="Mật khẩu" />
+          </Form.Item>
+
+          <Form.Item
+            name="confirm_password"
+            dependencies={['password']}
+            rules={[
+              { required: true, message: 'Vui lòng xác nhận mật khẩu!' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('password') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('Mật khẩu xác nhận không khớp!'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password prefix={<LockOutlined />} placeholder="Xác nhận mật khẩu" />
           </Form.Item>
 
 
@@ -124,9 +172,14 @@ export default function RegisterPage() {
           >
             <Input placeholder="Nhập mã OTP 6 số" size="large" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block loading={otpLoading} size="large">
-            Xác nhận
-          </Button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button type="primary" htmlType="submit" style={{ flex: 1 }} loading={otpLoading} size="large">
+              Xác nhận
+            </Button>
+            <Button onClick={handleResendOtp} disabled={otpLoading || countdown > 0} size="large">
+              {countdown > 0 ? `Gửi lại mã (${countdown}s)` : 'Gửi lại mã'}
+            </Button>
+          </div>
         </Form>
       </Modal>
     </div>

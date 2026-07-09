@@ -1,8 +1,7 @@
 import { Form, Input, Button, Card, Typography, message, Steps } from 'antd';
 import { MailOutlined, LockOutlined } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { authApi } from '../../api/authApi';
 
 const { Title, Text } = Typography;
@@ -12,8 +11,36 @@ export default function ForgotPasswordPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    let timer;
+    if (currentStep === 1 && countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [currentStep, countdown]);
+
+  const handleVerifyOtpLocal = (values) => {
+    setOtpCode(values.otp_code);
+    setCurrentStep(2);
+  };
   
-  const [form] = Form.useForm();
+  const handleResendOtp = async () => {
+    try {
+      setLoading(true);
+      await authApi.forgotPassword({ email });
+      message.success('Đã gửi lại mã OTP. Vui lòng kiểm tra email!');
+      setCountdown(60);
+    } catch (err) {
+      message.error(err.response?.data?.message || err.message || 'Gửi lại mã thất bại');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleRequestOtp = async (values) => {
     try {
@@ -21,6 +48,7 @@ export default function ForgotPasswordPage() {
       await authApi.forgotPassword(values);
       setEmail(values.email);
       message.success('Mã OTP đã được gửi đến email của bạn');
+      setCountdown(60);
       setCurrentStep(1);
     } catch (err) {
       message.error(err.message || 'Lỗi gửi yêu cầu');
@@ -34,8 +62,9 @@ export default function ForgotPasswordPage() {
       setLoading(true);
       await authApi.resetPassword({
         email,
-        otp_code: values.otp_code,
-        new_password: values.new_password
+        otp_code: otpCode,
+        new_password: values.new_password,
+        confirm_password: values.confirm_password
       });
       message.success('Khôi phục mật khẩu thành công. Vui lòng đăng nhập!');
       navigate('/login');
@@ -58,7 +87,8 @@ export default function ForgotPasswordPage() {
           current={currentStep} 
           items={[
             { title: 'Nhập Email' },
-            { title: 'Đặt lại mật khẩu' }
+            { title: 'Nhập OTP' },
+            { title: 'Đổi mật khẩu' }
           ]} 
           style={{ marginBottom: 32 }}
         />
@@ -83,18 +113,56 @@ export default function ForgotPasswordPage() {
         )}
 
         {currentStep === 1 && (
-          <Form layout="vertical" onFinish={handleResetPassword} size="large">
+          <Form layout="vertical" onFinish={handleVerifyOtpLocal} size="large">
             <Form.Item
               name="otp_code"
               rules={[{ required: true, message: 'Vui lòng nhập mã OTP!' }]}
             >
               <Input placeholder="Mã OTP 6 số" />
             </Form.Item>
+            <Form.Item>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button type="primary" htmlType="submit" style={{ flex: 1 }} loading={loading}>
+                  Tiếp tục
+                </Button>
+                <Button onClick={handleResendOtp} disabled={loading || countdown > 0}>
+                  {countdown > 0 ? `Gửi lại mã (${countdown}s)` : 'Gửi lại mã'}
+                </Button>
+              </div>
+            </Form.Item>
+          </Form>
+        )}
+
+        {currentStep === 2 && (
+          <Form layout="vertical" onFinish={handleResetPassword} size="large">
             <Form.Item
               name="new_password"
-              rules={[{ required: true, message: 'Vui lòng nhập mật khẩu mới!', min: 6 }]}
+              rules={[
+                { required: true, message: 'Vui lòng nhập mật khẩu mới!' },
+                {
+                  pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/,
+                  message: 'Mật khẩu phải từ 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt',
+                },
+              ]}
             >
               <Input.Password prefix={<LockOutlined />} placeholder="Mật khẩu mới" />
+            </Form.Item>
+            <Form.Item
+              name="confirm_password"
+              dependencies={['new_password']}
+              rules={[
+                { required: true, message: 'Vui lòng xác nhận mật khẩu!' },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue('new_password') === value) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(new Error('Mật khẩu xác nhận không khớp!'));
+                  },
+                }),
+              ]}
+            >
+              <Input.Password prefix={<LockOutlined />} placeholder="Xác nhận mật khẩu mới" />
             </Form.Item>
             <Form.Item>
               <Button type="primary" htmlType="submit" block loading={loading}>

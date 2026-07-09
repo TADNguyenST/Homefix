@@ -47,13 +47,15 @@ export default function CustomerLayout() {
     },
   ];
 
-  const selectedKey = menuItems.find(item => location.pathname === item.key || location.pathname.startsWith(`${item.key}/`))?.key || '/customer';
+  const selectedKey = menuItems.find(item => 
+    item.key === '/customer' ? location.pathname === '/customer' : location.pathname.startsWith(item.key)
+  )?.key || '/customer';
 
   return (
     <div className="public-layout" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <PublicNavbar />
 
-      <main className="page-container" style={{ flex: 1, width: '100%' }}>
+      <main className="page-container" style={{ flex: 1, width: '100%', minHeight: '80vh' }}>
         <Row gutter={[24, 24]}>
           <Col xs={24} md={6} lg={5}>
             <Card className="glass-card" styles={{ body: { padding: '16px 0' } }} style={{ position: 'sticky', top: 88 }}>

@@ -5,12 +5,13 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, roleMiddleware } = require('../middlewares/authMiddleware');
-const { getQuotation, acceptQuotation, rejectQuotation } = require('../controllers/quotationController');
+const { getQuotationById, getQuotation, acceptQuotation, rejectQuotation } = require('../controllers/quotationController');
 
 router.use(authMiddleware);
 
 // Customer/Admin xem báo giá
 router.get('/booking/:bookingId', getQuotation);
+router.get('/:id', getQuotationById);
 
 // Customer phản hồi
 router.put('/:id/accept', roleMiddleware(['CUSTOMER']), acceptQuotation);

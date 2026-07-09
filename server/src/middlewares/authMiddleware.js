@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../utils/prisma');
+const activeSessions = require('../utils/sessionStore');
 
 const authMiddleware = async (req, res, next) => {
   try {
@@ -8,13 +9,19 @@ const authMiddleware = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    // Nếu token cũ thì đá 
+    const currentToken = activeSessions.get(decoded.id);
+    if (currentToken && currentToken !== token) {
+      return res.status(401).json({ success: false, error: 'Tài khoản đang được đăng nhập ở thiết bị khác.' });
+    }
+
     // Kiểm tra user còn active không (phòng trường hợp bị lock sau khi JWT đã cấp)
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      select: { id: true, role: true, email: true, is_active: true },
+      select: { id: true, role: true, email: true, is_active: true, is_locked: true },
     });
 
-    if (!user || !user.is_active) {
+    if (!user || !user.is_active || user.is_locked) {
       return res.status(403).json({ success: false, error: 'Tài khoản đã bị vô hiệu hóa.' });
     }
 

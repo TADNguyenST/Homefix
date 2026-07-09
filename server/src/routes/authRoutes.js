@@ -1,7 +1,3 @@
-// ============================================================
-// HOMEFIX AI — Auth Routes
-// ============================================================
-
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middlewares/authMiddleware');
@@ -11,6 +7,7 @@ const {
   verifyOtp,
   resendOtp,
   login,
+  logout,
   forgotPassword,
   resetPassword,
   getMe,
@@ -27,6 +24,7 @@ router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
 router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
 
 // Protected routes (cần đăng nhập)
+router.post('/logout', authMiddleware, logout);
 router.get('/me', authMiddleware, getMe);
 router.put('/profile', authMiddleware, validate(updateProfileSchema), updateProfile);
 router.put('/change-password', authMiddleware, validate(changePasswordSchema), changePassword);

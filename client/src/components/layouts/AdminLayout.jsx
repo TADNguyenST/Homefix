@@ -10,7 +10,8 @@ import {
   MessageOutlined,
   LogoutOutlined,
   EnvironmentOutlined,
-  GiftOutlined
+  GiftOutlined,
+  BarChartOutlined
 } from '@ant-design/icons';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -33,7 +34,7 @@ export default function AdminLayout() {
     {
       key: '/admin',
       icon: <DashboardOutlined />,
-      label: <Link to="/admin">Dashboard</Link>,
+      label: <Link to="/admin">Tổng quan</Link>,
     },
     {
       key: '/admin/bookings',
@@ -94,6 +95,11 @@ export default function AdminLayout() {
       icon: <MessageOutlined />,
       label: <Link to="/admin/complaints">Khiếu nại</Link>,
     },
+    {
+      key: '/admin/reports',
+      icon: <BarChartOutlined />,
+      label: <Link to="/admin/reports">Báo cáo</Link>,
+    },
   ];
 
   const userDropdown = [
@@ -120,12 +126,14 @@ export default function AdminLayout() {
   const activeKey = selectedKey;
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider 
         theme="dark" 
         width={260} 
         breakpoint="lg"
         collapsedWidth="0"
+        style={{ overflowY: 'auto', height: '100vh' }}
+        className="hide-scrollbar"
       >
         <div className="sidebar-header">
           <div className="logo-text">
@@ -150,7 +158,7 @@ export default function AdminLayout() {
         />
       </Sider>
       
-      <Layout>
+      <Layout style={{ overflowY: 'auto', height: '100vh' }}>
         <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f0f0' }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--navy)' }}>
             Bảng điều khiển Quản trị
@@ -167,7 +175,7 @@ export default function AdminLayout() {
           </div>
         </Header>
         
-        <Content className="page-container">
+        <Content style={{ padding: '24px 32px' }}>
           <Outlet />
         </Content>
       </Layout>

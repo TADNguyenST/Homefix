@@ -1,10 +1,3 @@
-// ============================================================
-// HOMEFIX AI — AI Service (Gemini Integration)
-// Xử lý nghiệp vụ AI: chẩn đoán sự cố, phân tích sentiment,
-// gợi ý kỹ thuật viên.
-// Nếu GEMINI_API_KEY rỗng → trả về mock data.
-// ============================================================
-
 const prisma = require('../utils/prisma');
 
 // Khởi tạo Gemini model (lazy init, chỉ khi có API key)
@@ -52,12 +45,12 @@ const MOCK_SENTIMENT = 'NEUTRAL';
 const getSmartMockDiagnosis = async (description) => {
   try {
     const descLower = description.toLowerCase();
-    
+
     // Tìm các dịch vụ trong DB để map chính xác tên
     const allServices = await prisma.service.findMany({
       select: { id: true, name: true, base_price: true }
     });
-    
+
     let matchedServices = [];
     let errorDesc = 'Sự cố cần kiểm tra thực tế để xác định chính xác.';
     let solution = 'Kỹ thuật viên sẽ đến tận nơi đo đạc và đưa ra phương án sửa chữa.';
@@ -184,12 +177,13 @@ YÊU CẦU TRẢ VỀ JSON CÓ CẤU TRÚC SAU:
 4. Lời khuyên an toàn khẩn cấp lập tức cho chủ nhà (safety_tips): Một danh sách gồm 2-3 lời khuyên ngắn gọn ví dụ: "Ngắt aptomat", "Khóa van nước tổng".
 5. Gợi ý 1-2 dịch vụ phù hợp trong hệ thống của chúng tôi (suggested_services).
 6. QUAN TRỌNG: Hãy chọn RA 1 DỊCH VỤ PHÙ HỢP NHẤT từ danh sách trên để xử lý lỗi này. Trả về đúng ID của dịch vụ đó vào trường "service_id". Nếu không có dịch vụ nào phù hợp, trả về null.
+7. BẢO MẬT & SPAM: Nếu nội dung của khách hàng là rác, trêu đùa, hoặc KHÔNG LIÊN QUAN ĐẾN CÁC SỰ CỐ NHÀ CỬA (điện, nước, gia dụng...), hãy đặt "is_spam": true. Ngược lại đặt "is_spam": false.
 
 MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
 "${description}"`;
 
     // 3. Chuẩn bị Payload cho Gemini (Text + Image nếu có)
-    const promptParts = [promptText];
+    const promptParts = [{ text: promptText }];
 
     if (base64Image) {
       // Xử lý chuỗi base64 (cắt bỏ phần prefix "data:image/jpeg;base64," nếu có)
@@ -208,6 +202,7 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
       responseSchema: {
         type: "OBJECT",
         properties: {
+          is_spam: { type: "BOOLEAN" },
           severity: { type: "STRING" },
           service_id: { type: "INTEGER" },
           suggested_services: { type: "ARRAY", items: { type: "STRING" } },
@@ -217,7 +212,7 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
           predicted_cause: { type: "STRING" },
           suggested_action: { type: "STRING" }
         },
-        required: ["severity", "diagnosis_error", "diagnosis_solution", "safety_tips", "predicted_cause", "suggested_action"]
+        required: ["is_spam", "severity", "diagnosis_error", "diagnosis_solution", "safety_tips", "predicted_cause", "suggested_action"]
       }
     };
 
@@ -229,6 +224,10 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
 
     const responseText = result.response.text();
     const parsed = JSON.parse(responseText);
+
+    if (parsed.is_spam) {
+      throw new Error('SPAM_DETECTED');
+    }
 
     return {
       severity: parsed.severity || 'MEDIUM',
@@ -243,6 +242,9 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
     };
   } catch (err) {
     console.error('[AI Service] diagnoseIssue error:', err.message);
+    if (err.message === 'SPAM_DETECTED') {
+      throw err;
+    }
     // Fallback nếu API lỗi
     return await getSmartMockDiagnosis(description);
   }
@@ -298,7 +300,7 @@ const analyzeSentiment = async (text) => {
  * @returns {Array} Top 5 kỹ thuật viên phù hợp
  */
 const recommendTechnicians = async (bookingId) => {
-  // Lấy thông tin booking
+  // Lấy thông tin booking kèm theo tên dịch vụ
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     select: {
@@ -307,6 +309,10 @@ const recommendTechnicians = async (bookingId) => {
       booking_date: true,
       time_slot_start: true,
       time_slot_end: true,
+      description: true,
+      service: {
+        select: { name: true }
+      }
     },
   });
 
@@ -321,6 +327,7 @@ const recommendTechnicians = async (bookingId) => {
   const technicians = await prisma.technicianProfile.findMany({
     where: {
       is_available: true,
+      user: { is_active: true, is_locked: false },
       OR: [
         { district_id: booking.district_id },
         { district_id: null },
@@ -358,32 +365,137 @@ const recommendTechnicians = async (bookingId) => {
     },
   });
 
-  // Ánh xạ skill_level sang số để sort
+  // Ánh xạ skill_level sang số để dùng cho fallback hoặc kết hợp
   const skillLevelOrder = { EXPERT: 3, INTERMEDIATE: 2, BEGINNER: 1 };
 
-  // Sắp xếp: skill_level DESC → avg_rating DESC → cùng district ưu tiên
-  const sorted = technicians
-    .map((tech) => {
-      const matchingSkill = tech.skills[0]; // Đã filter ở where
+  // Chuẩn bị danh sách thợ ban đầu kèm theo các trường bổ sung
+  let candidates = technicians.map((tech) => {
+    const matchingSkill = tech.skills[0];
+    return {
+      ...tech,
+      _skill_level_order: skillLevelOrder[matchingSkill?.skill_level] || 0,
+      _same_district: tech.district_id === booking.district_id || tech.district_id === null,
+      ai_score: null,
+      ai_reason: null,
+    };
+  });
+
+  // Thử gọi Gemini AI nếu sẵn sàng và có danh sách ứng viên
+  const isAiReady = initGemini();
+  if (isAiReady && candidates.length > 0) {
+    try {
+      const techListString = candidates.map(t => {
+        const matchingSkill = t.skills[0];
+        return `- ID: ${t.id}
+  Họ tên: ${t.user?.full_name || 'N/A'}
+  Kinh nghiệm: ${t.years_of_experience} năm
+  Cấp độ kỹ năng cho dịch vụ này: ${matchingSkill?.skill_level || 'N/A'}
+  Đánh giá trung bình: ${t.avg_rating} sao
+  Tổng số đơn đã làm: ${t.total_completed_jobs}
+  Khu vực đăng ký: ${t.district?.name || 'Toàn thành phố'}
+  Giới thiệu bản thân: ${t.bio || 'Không có'}`;
+      }).join('\n\n');
+
+      const promptText = `Bạn là trợ lý điều phối dịch vụ sửa chữa thông minh.
+Nhiệm vụ của bạn là đánh giá sự phù hợp của các kỹ thuật viên đối với đơn đặt lịch dưới đây và xếp hạng họ.
+
+THÔNG TIN ĐƠN ĐẶT LỊCH:
+- Dịch vụ yêu cầu: ${booking.service?.name}
+- Mô tả sự cố của khách hàng: "${booking.description}"
+- Khu vực yêu cầu: Quận ${booking.district_id}
+
+DANH SÁCH KỸ THUẬT VIÊN KHẢ DỤNG:
+${techListString}
+
+YÊU CẦU:
+1. Đánh giá mức độ phù hợp của từng kỹ thuật viên với sự cố dựa trên kỹ năng, kinh nghiệm và bio của họ.
+2. Cho điểm độ phù hợp (ai_score) từ 0 đến 100 cho mỗi người.
+3. Viết một lý do ngắn gọn bằng tiếng Việt (ai_reason, tối đa 2 câu) giải thích tại sao thợ này phù hợp (ví dụ: kinh nghiệm dày dặn với loại lỗi này, đánh giá sao cao từ khách hàng trước...).
+4. Trả về đúng định dạng JSON yêu cầu.`;
+
+      const generationConfig = {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            recommendations: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  technician_id: { type: "INTEGER" },
+                  ai_score: { type: "INTEGER" },
+                  ai_reason: { type: "STRING" }
+                },
+                required: ["technician_id", "ai_score", "ai_reason"]
+              }
+            }
+          },
+          required: ["recommendations"]
+        }
+      };
+
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: promptText }] }],
+        generationConfig,
+      });
+
+      const responseText = result.response.text();
+      const parsed = JSON.parse(responseText);
+      const recs = parsed.recommendations || [];
+
+      // Map kết quả AI trả về vào danh sách ứng viên
+      candidates = candidates.map(tech => {
+        const match = recs.find(r => r.technician_id === tech.id);
+        if (match) {
+          return {
+            ...tech,
+            ai_score: match.ai_score,
+            ai_reason: match.ai_reason
+          };
+        }
+        return tech;
+      });
+    } catch (err) {
+      console.error('[AI Service] recommendTechnicians AI error:', err.message);
+      // Tiếp tục chạy để fallback xuống rule-based nếu AI bị lỗi
+    }
+  }
+
+  // Sắp xếp: Ưu tiên thợ có điểm AI trước, sau đó là rule-based fallback
+  const sorted = candidates.sort((a, b) => {
+    // Nếu cả hai đều có điểm AI, sắp xếp theo điểm AI giảm dần
+    if (a.ai_score !== null && b.ai_score !== null) {
+      return b.ai_score - a.ai_score;
+    }
+    // Ưu tiên người có điểm AI hơn người không có (nếu có lỗi map)
+    if (a.ai_score !== null) return -1;
+    if (b.ai_score !== null) return 1;
+
+    // Fallback sắp xếp theo luật cũ
+    if (a._same_district && !b._same_district) return -1;
+    if (!a._same_district && b._same_district) return 1;
+    if (b._skill_level_order !== a._skill_level_order) return b._skill_level_order - a._skill_level_order;
+    return Number(b.avg_rating) - Number(a.avg_rating);
+  });
+
+  // Nếu thợ không có điểm AI (do fallback), gán điểm và nhận xét mặc định
+  const finalResult = sorted.map(tech => {
+    if (tech.ai_score === null) {
+      const calculatedScore = Math.min(60 + tech._skill_level_order * 10 + Math.round(Number(tech.avg_rating) * 5), 100);
       return {
         ...tech,
-        _skill_level_order: skillLevelOrder[matchingSkill?.skill_level] || 0,
-        _same_district: tech.district_id === booking.district_id || tech.district_id === null,
+        ai_score: calculatedScore,
+        ai_reason: `Gợi ý tự động dựa trên trình độ ${tech.skills[0]?.skill_level || 'khả dụng'} và đánh giá (${tech.avg_rating} sao).`
       };
-    })
-    .sort((a, b) => {
-      // Ưu tiên cùng quận
-      if (a._same_district && !b._same_district) return -1;
-      if (!a._same_district && b._same_district) return 1;
-      // Skill level cao hơn
-      if (b._skill_level_order !== a._skill_level_order) return b._skill_level_order - a._skill_level_order;
-      // Rating cao hơn
-      return Number(b.avg_rating) - Number(a.avg_rating);
-    })
-    .slice(0, 5); // Top 5
+    }
+    return tech;
+  });
 
-  // Clean up temporary sort fields
-  return sorted.map(({ _skill_level_order, _same_district, ...tech }) => tech);
+  // Lấy Top 5 và làm sạch các trường temp
+  return finalResult
+    .slice(0, 5)
+    .map(({ _skill_level_order, _same_district, ...tech }) => tech);
 };
 
 module.exports = {

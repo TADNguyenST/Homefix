@@ -21,17 +21,17 @@ export default function TechHistoryPage() {
       title: 'Mã Đơn',
       dataIndex: 'id',
       key: 'id',
-      render: (id) => <span style={{ fontWeight: 600 }}>#{id.substring(0, 8)}</span>,
+      render: (id) => <span style={{ fontWeight: 600 }}>#{id}</span>,
     },
     {
       title: 'Dịch vụ',
-      dataIndex: ['Service', 'name'],
+      dataIndex: ['service', 'name'],
       key: 'service',
       render: (text) => <span style={{ fontWeight: 500 }}>{text}</span>,
     },
     {
       title: 'Khách hàng',
-      dataIndex: ['Customer', 'User', 'full_name'],
+      dataIndex: ['customer', 'full_name'],
       key: 'customer',
     },
     {
@@ -42,9 +42,8 @@ export default function TechHistoryPage() {
     },
     {
       title: 'Tổng tiền',
-      dataIndex: 'total_price',
       key: 'total_price',
-      render: (price) => <span style={{ fontWeight: 600, color: 'var(--orange)' }}>{formatVND(price)}</span>,
+      render: (_, record) => <span style={{ fontWeight: 600, color: 'var(--orange)' }}>{formatVND(record.final_price || record.payment?.amount)}</span>,
     },
     {
       title: 'Trạng thái',
@@ -54,18 +53,17 @@ export default function TechHistoryPage() {
         const colorCfg = BOOKING_STATUS_COLORS[status] || {};
         return (
           <Tag color={colorCfg.bg} style={{ color: colorCfg.color, border: 'none', fontWeight: 600 }}>
-            {BOOKING_STATUS_LABELS[status]}
+            {BOOKING_STATUS_LABELS[status] || status}
           </Tag>
         );
       },
     },
     {
       title: 'Thanh toán',
-      dataIndex: 'payment_status',
       key: 'payment_status',
-      render: (status) => (
-        <Tag color={status === 'PAID' ? 'success' : 'default'} style={{ borderRadius: 'var(--radius-full)' }}>
-          {status === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}
+      render: (_, record) => (
+        <Tag color={record.payment?.status === 'PAID' ? 'success' : 'default'} style={{ borderRadius: 'var(--radius-full)' }}>
+          {record.payment?.status === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}
         </Tag>
       ),
     },

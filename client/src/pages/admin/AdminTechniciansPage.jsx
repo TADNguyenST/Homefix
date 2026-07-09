@@ -1,17 +1,50 @@
-import { Table, Tag, Button, Typography, Space, Modal, message, Descriptions, Divider, Row, Col, Form, Input, InputNumber, Select, Switch, Checkbox, TimePicker } from 'antd';
+import { Table, Tag, Button, Typography, Space, Modal, message, Descriptions, Divider, Row, Col, Form, Input, InputNumber, Select, Switch, Checkbox, TimePicker, Tooltip } from 'antd';
 import { useState } from 'react';
-import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { LockOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
-import { formatDateTime } from '../../utils/helpers';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
 
+const tableCardStyle = {
+  background: '#fff',
+  padding: 24,
+  borderRadius: 'var(--radius-xl)',
+  boxShadow: 'var(--shadow-sm)',
+  overflow: 'hidden',
+};
+
+const compactTagStyle = {
+  marginInlineEnd: 0,
+  maxWidth: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+};
+
+const iconButtonStyle = {
+  width: 34,
+  height: 34,
+  padding: 0,
+};
+
+const compactButtonStyle = {
+  height: 34,
+  paddingInline: 10,
+};
+
 export default function AdminTechniciansPage() {
+  const [search, setSearch] = useState('');
+  const [filterDistrict, setFilterDistrict] = useState(null);
+  const [filterStatus, setFilterStatus] = useState(null);
+
   const { data: techsData, isLoading, refetch } = useQuery({
-    queryKey: ['admin-technicians-list'],
-    queryFn: () => adminApi.getTechnicians(),
+    queryKey: ['admin-technicians-list', search, filterDistrict, filterStatus],
+    queryFn: () => adminApi.getTechnicians({
+      search,
+      district_id: filterDistrict,
+      is_available: filterStatus
+    }),
   });
 
   const { data: districtsData } = useQuery({
@@ -24,9 +57,10 @@ export default function AdminTechniciansPage() {
     queryFn: () => adminApi.getServices(),
   });
 
-  const technicians = techsData?.data || [];
+  // Handle paginated data from backend
+  const technicians = techsData?.data?.data || techsData?.data || [];
   const districts = districtsData?.data || [];
-  const services = servicesData?.data || [];
+  const services = servicesData?.data?.data || servicesData?.data || [];
 
   const [selectedTech, setSelectedTech] = useState(null);
   const [isDetailVisible, setIsDetailVisible] = useState(false);
@@ -34,6 +68,9 @@ export default function AdminTechniciansPage() {
   const [form] = Form.useForm();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
+
+  const isAccountActive = (tech) => tech.user?.is_active !== false && tech.user?.is_locked !== true;
+  const getActiveBookingCount = (tech) => tech._count?.bookings || 0;
 
   const handleViewDetail = (tech) => {
     setSelectedTech(tech);
@@ -72,19 +109,41 @@ export default function AdminTechniciansPage() {
     setIsModalVisible(true);
   };
 
-  const handleToggleActive = async (record) => {
+  const handleToggleAccount = async (record) => {
+    const accountActive = isAccountActive(record);
+    const activeBookingCount = getActiveBookingCount(record);
+    const technicianName = record.user?.full_name || 'kỹ thuật viên này';
+
     Modal.confirm({
-      title: record.is_available ? 'Ngừng nhận việc?' : 'Cho phép nhận việc?',
-      content: record.is_available ? 'Kỹ thuật viên sẽ không thể được phân công đơn mới.' : 'Kỹ thuật viên sẽ sẵn sàng nhận việc lại.',
+      title: accountActive ? `Khóa kỹ thuật viên ${technicianName}?` : `Mở khóa kỹ thuật viên ${technicianName}?`,
+      content: accountActive ? (
+        <Space direction="vertical" size={8}>
+          <span>Kỹ thuật viên sẽ không thể đăng nhập hoặc nhận đơn mới.</span>
+          {activeBookingCount > 0 && (
+            <span style={{ color: '#d4380d', fontWeight: 600 }}>
+              Kỹ thuật viên đang có {activeBookingCount} đơn chưa hoàn thành. Vui lòng kiểm tra trước khi khóa.
+            </span>
+          )}
+        </Space>
+      ) : (
+        'Tài khoản sẽ được mở lại và kỹ thuật viên sẽ sẵn sàng nhận việc.'
+      ),
+      okText: accountActive ? 'Khóa tài khoản' : 'Mở khóa',
+      cancelText: 'Đóng',
+      okButtonProps: { danger: accountActive },
       onOk: async () => {
         try {
-          await adminApi.updateTechnician(record.id, { is_available: !record.is_available });
-          message.success('Cập nhật trạng thái thành công');
+          if (accountActive) {
+            await adminApi.lockUser(record.user.id);
+          } else {
+            await adminApi.unlockUser(record.user.id);
+          }
+          message.success(accountActive ? 'Đã khóa tài khoản kỹ thuật viên' : 'Đã mở khóa tài khoản kỹ thuật viên');
           refetch();
         } catch (err) {
-          message.error(err.response?.data?.message || err.message || 'Lỗi khi cập nhật trạng thái');
+          message.error(err.response?.data?.message || err.message || 'Lỗi khi cập nhật trạng thái tài khoản');
         }
-      }
+      },
     });
   };
 
@@ -159,29 +218,31 @@ export default function AdminTechniciansPage() {
     return days[dayIdx] || `Thứ ${dayIdx + 1}`;
   };
 
-  // Removed broken handleApprove and handleReject since TechnicianProfile has no approval status in DB.
-
   const columns = [
     {
       title: 'Họ và tên',
       dataIndex: ['user', 'full_name'],
       key: 'full_name',
+      width: 85,
       render: (text) => <span style={{ fontWeight: 500, color: 'var(--navy)' }}>{text || 'N/A'}</span>,
     },
     {
       title: 'Số điện thoại',
       dataIndex: ['user', 'phone'],
       key: 'phone',
+      width: 95,
     },
     {
       title: 'Khu vực',
       dataIndex: ['district', 'name'],
       key: 'district',
+      width: 90,
       render: (text) => text || 'Chưa cập nhật',
     },
     {
       title: 'Chuyên môn',
       key: 'skills',
+      width: 190,
       render: (_, record) => {
         if (!record.skills || record.skills.length === 0) return <span style={{ color: 'var(--text-secondary)' }}>Chưa có</span>;
         return (
@@ -197,11 +258,13 @@ export default function AdminTechniciansPage() {
       title: 'Kinh nghiệm',
       dataIndex: 'years_of_experience',
       key: 'years_of_experience',
+      width: 75,
       render: (val) => `${val || 0} năm`,
     },
     {
       title: 'Hoàn thành / Đánh giá',
       key: 'performance',
+      width: 85,
       render: (_, record) => (
         <div>
           <div>{record.total_completed_jobs || 0} đơn</div>
@@ -211,37 +274,46 @@ export default function AdminTechniciansPage() {
     },
     {
       title: 'Trạng thái',
-      dataIndex: 'is_available',
-      key: 'is_available',
-      render: (is_available) => (
-        <Tag color={is_available ? 'success' : 'default'}>
-          {is_available ? 'Sẵn sàng nhận việc' : 'Đang bận / Tạm nghỉ'}
-        </Tag>
+      key: 'status',
+      width: 125,
+      render: (_, record) => (
+        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+          <Tag color={isAccountActive(record) ? 'success' : 'error'} style={compactTagStyle}>
+            {isAccountActive(record) ? 'Đang hoạt động' : 'Tài khoản đã khóa'}
+          </Tag>
+          <Tag color={record.is_available ? 'green' : 'default'} style={compactTagStyle}>
+            {record.is_available ? 'Sẵn sàng nhận việc' : 'Đang bận / Tạm nghỉ'}
+          </Tag>
+        </Space>
       ),
     },
     {
       title: 'Hành động',
       key: 'action',
+      width: 170,
       render: (_, record) => (
-        <Space>
-          <Button size="small" type="primary" onClick={() => handleViewDetail(record)}>Chi tiết</Button>
-          <Button size="small" onClick={() => handleEdit(record)}>Sửa</Button>
-          <Button 
-            size="small" 
-            danger={record.is_available} 
-            type={!record.is_available ? "primary" : "default"}
-            onClick={() => handleToggleActive(record)}
-          >
-            {record.is_available ? 'Khóa' : 'Mở khóa'}
-          </Button>
+        <Space size={6} style={{ flexWrap: 'nowrap' }}>
+          <Button size="small" type="primary" style={compactButtonStyle} onClick={() => handleViewDetail(record)}>Chi tiết</Button>
+          <Button size="small" style={compactButtonStyle} onClick={() => handleEdit(record)}>Sửa</Button>
+          <Tooltip title={isAccountActive(record) ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}>
+            <Button
+              size="small"
+              danger={isAccountActive(record)}
+              type={!isAccountActive(record) ? "primary" : "default"}
+              icon={isAccountActive(record) ? <LockOutlined /> : <UnlockOutlined />}
+              aria-label={isAccountActive(record) ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+              style={iconButtonStyle}
+              onClick={() => handleToggleAccount(record)}
+            />
+          </Tooltip>
         </Space>
       ),
     },
   ];
 
   return (
-    <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ maxWidth: '100%', overflowX: 'hidden' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <Title level={2} style={{ color: 'var(--navy)', marginBottom: 8 }}>Quản lý Kỹ thuật viên</Title>
           <p>Kiểm duyệt và quản lý hồ sơ đối tác thợ sửa chữa</p>
@@ -251,13 +323,46 @@ export default function AdminTechniciansPage() {
         </Button>
       </div>
 
-      <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
+      <div style={tableCardStyle}>
+        
+        {/* Lọc và Tìm kiếm */}
+        <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <Input.Search 
+            placeholder="Tìm theo tên, email, SĐT" 
+            allowClear 
+            onSearch={(value) => setSearch(value)}
+            style={{ width: 250 }}
+          />
+          <Select 
+            placeholder="Lọc theo khu vực" 
+            allowClear 
+            style={{ width: 200 }}
+            onChange={(val) => setFilterDistrict(val)}
+          >
+            {districts.map(d => (
+              <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>
+            ))}
+          </Select>
+          <Select 
+            placeholder="Lọc theo nhận việc" 
+            allowClear 
+            style={{ width: 180 }}
+            onChange={(val) => setFilterStatus(val)}
+          >
+            <Select.Option value={true}>Sẵn sàng nhận việc</Select.Option>
+            <Select.Option value={false}>Đang bận / Tạm nghỉ</Select.Option>
+          </Select>
+        </div>
+
         <Table 
           columns={columns} 
           dataSource={technicians} 
           rowKey="id"
           loading={isLoading}
           pagination={{ pageSize: 15 }}
+          size="middle"
+          tableLayout="fixed"
+          scroll={{ x: 910 }}
         />
       </div>
 
@@ -287,7 +392,12 @@ export default function AdminTechniciansPage() {
                 <span style={{ color: 'var(--orange)', fontWeight: 600 }}>⭐ {selectedTech.avg_rating ? Number(selectedTech.avg_rating).toFixed(1) : 'N/A'}</span>
               </Descriptions.Item>
               <Descriptions.Item label="Đã hoàn thành">{selectedTech.total_completed_jobs} đơn</Descriptions.Item>
-              <Descriptions.Item label="Trạng thái" span={2}>
+              <Descriptions.Item label="Tài khoản" span={2}>
+                <Tag color={isAccountActive(selectedTech) ? 'success' : 'error'}>
+                  {isAccountActive(selectedTech) ? 'Đang hoạt động' : 'Tài khoản đã khóa'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Nhận việc" span={2}>
                 <Tag color={selectedTech.is_available ? 'success' : 'default'}>
                   {selectedTech.is_available ? 'Sẵn sàng nhận việc' : 'Đang bận / Tạm nghỉ'}
                 </Tag>

@@ -1,21 +1,46 @@
-// ============================================================
-// HOMEFIX AI — Admin Controller
-// Quản lý toàn bộ nghiệp vụ Admin: Booking dispatch, User,
-// Technician, Category, Service, DeviceType, District, Ward,
-// Voucher, Payment, Complaint, Dashboard
-// ============================================================
-
 const bcrypt = require('bcrypt');
 const prisma = require('../utils/prisma');
 const { success, error, paginated } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
+const activeSessions = require('../utils/sessionStore');
 const {
   BOOKING_STATUS,
   ADMIN_CANCELLABLE_STATUSES,
   NOTIFICATION_TYPE,
   BUSINESS_RULES,
   ROLES,
+  PAYMENT_METHOD,
+  PAYMENT_STATUS,
+  PAYMENT_SETTLEMENT_STATUS,
 } = require('../config/constants');
+const { sendTechnicianAccountEmail } = require('../utils/mailer');
+
+const summarizePaidPayments = (payments) => payments.reduce((summary, payment) => {
+  const amount = Number(payment.amount || 0);
+  summary.total_revenue += amount;
+
+  if (payment.method === PAYMENT_METHOD.VNPAY) {
+    summary.vnpay_received += amount;
+    summary.homefix_received += amount;
+  } else if (payment.method === PAYMENT_METHOD.CASH) {
+    summary.cash_collected += amount;
+    if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.SETTLED) {
+      summary.cash_settled += amount;
+      summary.homefix_received += amount;
+    } else {
+      summary.cash_pending += amount;
+    }
+  }
+
+  return summary;
+}, {
+  total_revenue: 0,
+  homefix_received: 0,
+  vnpay_received: 0,
+  cash_collected: 0,
+  cash_pending: 0,
+  cash_settled: 0,
+});
 
 // ========================
 // BOOKING DISPATCH
@@ -222,12 +247,15 @@ const assignTechnician = async (req, res) => {
     const techProfile = await prisma.technicianProfile.findUnique({
       where: { id: technician_profile_id },
       include: {
-        user: { select: { id: true, full_name: true } },
+        user: { select: { id: true, full_name: true, is_active: true, is_locked: true } },
         skills: true,
         schedules: true,
       },
     });
     if (!techProfile) return error(res, 'Kỹ thuật viên không tồn tại', 404);
+    if (!techProfile.user.is_active || techProfile.user.is_locked) {
+      return error(res, 'Tài khoản kỹ thuật viên chưa kích hoạt hoặc đã bị khóa', 400);
+    }
     if (!techProfile.is_available) return error(res, 'Kỹ thuật viên hiện không khả dụng', 400);
 
     if (techProfile.district_id && techProfile.district_id !== booking.district_id) {
@@ -334,12 +362,15 @@ const reassignTechnician = async (req, res) => {
     const newTechProfile = await prisma.technicianProfile.findUnique({
       where: { id: technician_profile_id },
       include: {
-        user: { select: { id: true, full_name: true } },
+        user: { select: { id: true, full_name: true, is_active: true, is_locked: true } },
         skills: true,
         schedules: true,
       },
     });
     if (!newTechProfile) return error(res, 'Kỹ thuật viên không tồn tại', 404);
+    if (!newTechProfile.user.is_active || newTechProfile.user.is_locked) {
+      return error(res, 'Tài khoản kỹ thuật viên chưa kích hoạt hoặc đã bị khóa', 400);
+    }
     if (!newTechProfile.is_available) return error(res, 'Kỹ thuật viên hiện không khả dụng', 400);
 
     if (newTechProfile.district_id && newTechProfile.district_id !== booking.district_id) {
@@ -528,11 +559,12 @@ const cancelBooking = async (req, res) => {
 const getUsers = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
-    const { role, is_active, search } = req.query;
+    const { role, is_active, is_locked, search } = req.query;
 
     const where = {};
     if (role) where.role = role;
     if (is_active !== undefined) where.is_active = is_active === 'true';
+    if (is_locked !== undefined) where.is_locked = is_locked === 'true';
     if (search) {
       where.OR = [
         { full_name: { contains: search, mode: 'insensitive' } },
@@ -548,7 +580,7 @@ const getUsers = async (req, res) => {
         orderBy: { created_at: 'desc' },
         select: {
           id: true, email: true, full_name: true, role: true,
-          phone: true, avatar_url: true, is_active: true,
+          phone: true, avatar_url: true, is_active: true, is_locked: true,
           created_at: true, updated_at: true,
         },
       }),
@@ -567,12 +599,29 @@ const getUsers = async (req, res) => {
  */
 const lockUser = async (req, res) => {
   try {
-    const { id } = req.params;
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return error(res, 'Mã tài khoản không hợp lệ', 400);
+    }
+    if (userId === req.user.id) {
+      return error(res, 'Admin không thể tự khóa tài khoản của mình', 400);
+    }
+
+    const userToLock = await prisma.user.findUnique({ where: { id: userId } });
+    if (!userToLock) return error(res, 'Không tìm thấy tài khoản', 404);
+    if (userToLock.role === ROLES.ADMIN) {
+      return error(res, 'Không thể khóa tài khoản Admin bằng chức năng này', 403);
+    }
+    if (userToLock.is_locked) {
+      return error(res, 'Tài khoản đã bị khóa trước đó', 409);
+    }
+
     const user = await prisma.user.update({
-      where: { id: parseInt(id) },
-      data: { is_active: false },
-      select: { id: true, email: true, full_name: true, is_active: true },
+      where: { id: userId },
+      data: { is_locked: true },
+      select: { id: true, email: true, full_name: true, is_active: true, is_locked: true },
     });
+    activeSessions.delete(userId);
     return success(res, user, 'Khóa tài khoản thành công');
   } catch (err) {
     console.error('lockUser error:', err);
@@ -585,11 +634,24 @@ const lockUser = async (req, res) => {
  */
 const unlockUser = async (req, res) => {
   try {
-    const { id } = req.params;
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return error(res, 'Mã tài khoản không hợp lệ', 400);
+    }
+
+    const userToUnlock = await prisma.user.findUnique({ where: { id: userId } });
+    if (!userToUnlock) return error(res, 'Không tìm thấy tài khoản', 404);
+    if (userToUnlock.role === ROLES.ADMIN) {
+      return error(res, 'Không thể thay đổi trạng thái khóa của Admin bằng chức năng này', 403);
+    }
+    if (!userToUnlock.is_locked) {
+      return error(res, 'Tài khoản hiện không bị khóa', 409);
+    }
+
     const user = await prisma.user.update({
-      where: { id: parseInt(id) },
-      data: { is_active: true },
-      select: { id: true, email: true, full_name: true, is_active: true },
+      where: { id: userId },
+      data: { is_locked: false },
+      select: { id: true, email: true, full_name: true, is_active: true, is_locked: true },
     });
     return success(res, user, 'Mở khóa tài khoản thành công');
   } catch (err) {
@@ -603,26 +665,60 @@ const unlockUser = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/technicians
+ * GET /admin/technicians (UC-67: View Technicians)
  * Danh sách kỹ thuật viên với profile, skills, rating.
+ * Filter: search (tên/email/sđt), district_id, is_available
  */
 const getTechnicians = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
+    const { search, district_id, is_available } = req.query;
+
+    // [UC-67] Xây dựng điều kiện filter
+    const where = {};
+    if (district_id) where.district_id = parseInt(district_id);
+    if (is_available !== undefined) where.is_available = is_available === 'true';
+    if (search) {
+      where.user = {
+        OR: [
+          { full_name: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search, mode: 'insensitive' } },
+        ],
+      };
+    }
 
     const [technicians, total] = await Promise.all([
       prisma.technicianProfile.findMany({
+        where,
         skip,
         take,
         orderBy: { created_at: 'desc' },
         include: {
-          user: { select: { id: true, email: true, full_name: true, phone: true, avatar_url: true, is_active: true } },
+          user: {
+            select: {
+              id: true,
+              email: true,
+              full_name: true,
+              phone: true,
+              avatar_url: true,
+              is_active: true,
+              is_locked: true,
+            },
+          },
           district: { select: { id: true, name: true } },
           skills: { include: { service: { select: { id: true, name: true } } } },
           schedules: true,
+          _count: {
+            select: {
+              bookings: {
+                where: { status: { notIn: [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED] } },
+              },
+            },
+          },
         },
       }),
-      prisma.technicianProfile.count(),
+      prisma.technicianProfile.count({ where }),
     ]);
 
     return paginated(res, technicians, total, page, limit);
@@ -669,6 +765,9 @@ const createTechnician = async (req, res) => {
 
       return { user, profile };
     });
+
+    // Gửi email thông báo tài khoản cho thợ (Chạy ngầm không dùng await để không block API)
+    sendTechnicianAccountEmail(email, full_name, BUSINESS_RULES.DEFAULT_TECH_PASSWORD).catch(err => console.error("Lỗi gửi email thợ:", err));
 
     return success(res, {
       id: result.user.id,
@@ -827,15 +926,24 @@ const updateTechnicianSchedule = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/categories
+ * GET /admin/categories (UC-73: View Categories)
  * Tất cả categories (bao gồm inactive), kèm số lượng service.
+ * Filter: search (tên), is_active
  */
 const getCategories = async (req, res) => {
   try {
+    const { search, is_active, is_deleted } = req.query;
+
+    // [UC-73] Xây dựng điều kiện filter
+    const where = { is_deleted: is_deleted === 'true' };
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (is_active !== undefined) where.is_active = is_active === 'true';
+
     const categories = await prisma.serviceCategory.findMany({
+      where,
       orderBy: { created_at: 'desc' },
       include: {
-        _count: { select: { services: true } },
+        _count: { select: { services: true, deviceTypes: true } },
       },
     });
     return success(res, categories);
@@ -873,7 +981,7 @@ const createCategory = async (req, res) => {
 const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, icon_url, is_active } = req.body;
+    const { name, description, icon_url, is_active, is_deleted } = req.body;
 
     // Nếu đổi tên, kiểm tra trùng
     if (name) {
@@ -890,6 +998,7 @@ const updateCategory = async (req, res) => {
         ...(description !== undefined && { description }),
         ...(icon_url !== undefined && { icon_url }),
         ...(is_active !== undefined && { is_active }),
+        ...(is_deleted !== undefined && { is_deleted }),
       },
     });
     return success(res, category, 'Cập nhật danh mục thành công');
@@ -914,8 +1023,8 @@ const deleteCategory = async (req, res) => {
       return error(res, 'Không thể xóa danh mục có dịch vụ', 400);
     }
 
-    await prisma.serviceCategory.delete({ where: { id: categoryId } });
-    return success(res, null, 'Xóa danh mục thành công');
+    await prisma.serviceCategory.update({ where: { id: categoryId }, data: { is_deleted: true } });
+    return success(res, null, 'Đã chuyển danh mục vào thùng rác');
   } catch (err) {
     console.error('deleteCategory error:', err);
     return error(res, 'Không thể xóa danh mục', 500);
@@ -927,15 +1036,24 @@ const deleteCategory = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/services
+ * GET /admin/services (UC-77: View Services)
  * Tất cả services (bao gồm inactive), kèm tên category. Pagination.
+ * Filter: search (tên), category_id, is_active
  */
 const getServices = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
+    const { search, category_id, is_active, is_deleted } = req.query;
+
+    // [UC-77] Xây dựng điều kiện filter
+    const where = { is_deleted: is_deleted === 'true' };
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (category_id) where.category_id = parseInt(category_id);
+    if (is_active !== undefined) where.is_active = is_active === 'true';
 
     const [services, total] = await Promise.all([
       prisma.service.findMany({
+        where,
         skip,
         take,
         orderBy: { created_at: 'desc' },
@@ -943,7 +1061,7 @@ const getServices = async (req, res) => {
           category: { select: { id: true, name: true } },
         },
       }),
-      prisma.service.count(),
+      prisma.service.count({ where }),
     ]);
 
     return paginated(res, services, total, page, limit);
@@ -977,7 +1095,7 @@ const createService = async (req, res) => {
 const updateService = async (req, res) => {
   try {
     const { id } = req.params;
-    const { category_id, name, description, base_price, estimated_duration, image_url, is_active } = req.body;
+    const { category_id, name, description, base_price, estimated_duration, image_url, is_active, is_deleted } = req.body;
 
     const service = await prisma.service.update({
       where: { id: parseInt(id) },
@@ -989,6 +1107,7 @@ const updateService = async (req, res) => {
         ...(estimated_duration !== undefined && { estimated_duration }),
         ...(image_url !== undefined && { image_url }),
         ...(is_active !== undefined && { is_active }),
+        ...(is_deleted !== undefined && { is_deleted }),
       },
       include: { category: { select: { id: true, name: true } } },
     });
@@ -1001,7 +1120,7 @@ const updateService = async (req, res) => {
 
 /**
  * DELETE /admin/services/:id
- * Soft delete: set is_active=false. Chặn nếu có booking đang active.
+ * Soft delete: ẩn dịch vụ để giữ nguyên lịch sử booking và báo cáo.
  */
 const deleteService = async (req, res) => {
   try {
@@ -1021,9 +1140,10 @@ const deleteService = async (req, res) => {
 
     const service = await prisma.service.update({
       where: { id: serviceId },
-      data: { is_active: false },
+      data: { is_deleted: true },
     });
-    return success(res, service, 'Dịch vụ đã được ẩn');
+
+    return success(res, service, 'Đã chuyển dịch vụ vào thùng rác');
   } catch (err) {
     console.error('deleteService error:', err);
     return error(res, 'Không thể xóa dịch vụ', 500);
@@ -1035,11 +1155,20 @@ const deleteService = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/device-types
+ * GET /admin/device-types (UC-81: View Device Types)
+ * Filter: search (tên), category_id
  */
 const getDeviceTypes = async (req, res) => {
   try {
+    const { search, category_id, is_deleted } = req.query;
+
+    // [UC-81] Xây dựng điều kiện filter
+    const where = { is_deleted: is_deleted === 'true' };
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (category_id) where.category_id = parseInt(category_id);
+
     const deviceTypes = await prisma.deviceType.findMany({
+      where,
       orderBy: { created_at: 'desc' },
       include: {
         category: { select: { id: true, name: true } },
@@ -1075,7 +1204,7 @@ const createDeviceType = async (req, res) => {
 const updateDeviceType = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, is_active, category_id } = req.body;
+    const { name, description, is_active, category_id, is_deleted } = req.body;
     const deviceType = await prisma.deviceType.update({
       where: { id: parseInt(id) },
       data: {
@@ -1083,6 +1212,7 @@ const updateDeviceType = async (req, res) => {
         ...(description !== undefined && { description }),
         ...(is_active !== undefined && { is_active }),
         ...(category_id !== undefined && { category_id: category_id || null }),
+        ...(is_deleted !== undefined && { is_deleted }),
       },
       include: { category: { select: { id: true, name: true } } },
     });
@@ -1107,8 +1237,8 @@ const deleteDeviceType = async (req, res) => {
       return error(res, 'Không thể xóa loại thiết bị đang được sử dụng trong đơn hàng', 400);
     }
 
-    await prisma.deviceType.delete({ where: { id: deviceTypeId } });
-    return success(res, null, 'Xóa loại thiết bị thành công');
+    await prisma.deviceType.update({ where: { id: deviceTypeId }, data: { is_deleted: true } });
+    return success(res, null, 'Đã chuyển loại thiết bị vào thùng rác');
   } catch (err) {
     console.error('deleteDeviceType error:', err);
     return error(res, 'Không thể xóa loại thiết bị', 500);
@@ -1120,12 +1250,21 @@ const deleteDeviceType = async (req, res) => {
 // ========================
 
 /**
- * GET /admin/districts
+ * GET /admin/districts (UC-85: View Districts & Wards)
  * Tất cả districts với ward count và danh sách wards.
+ * Filter: search (tên), type
  */
 const getDistricts = async (req, res) => {
   try {
+    const { search, type } = req.query;
+
+    // [UC-85] Xây dựng điều kiện filter
+    const where = {};
+    if (search) where.name = { contains: search, mode: 'insensitive' };
+    if (type) where.type = type;
+
     const districts = await prisma.district.findMany({
+      where,
       orderBy: { name: 'asc' },
       include: {
         wards: { orderBy: { name: 'asc' } },
@@ -1404,18 +1543,29 @@ const toggleVoucher = async (req, res) => {
 const getPayments = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
-    const { method, status: paymentStatus, date_from, date_to } = req.query;
+    const { method, status: paymentStatus, settlement_status, date_from, date_to } = req.query;
+
+    if (method && !Object.values(PAYMENT_METHOD).includes(method)) {
+      return error(res, 'Phương thức thanh toán không hợp lệ', 400);
+    }
+    if (paymentStatus && !Object.values(PAYMENT_STATUS).includes(paymentStatus)) {
+      return error(res, 'Trạng thái thanh toán không hợp lệ', 400);
+    }
+    if (settlement_status && !Object.values(PAYMENT_SETTLEMENT_STATUS).includes(settlement_status)) {
+      return error(res, 'Trạng thái đối soát không hợp lệ', 400);
+    }
 
     const where = {};
     if (method) where.method = method;
     if (paymentStatus) where.status = paymentStatus;
+    if (settlement_status) where.settlement_status = settlement_status;
     if (date_from || date_to) {
       where.created_at = {};
       if (date_from) where.created_at.gte = new Date(date_from);
       if (date_to) where.created_at.lte = new Date(date_to);
     }
 
-    const [payments, total] = await Promise.all([
+    const [payments, total, paidPayments] = await Promise.all([
       prisma.payment.findMany({
         where,
         skip,
@@ -1432,12 +1582,112 @@ const getPayments = async (req, res) => {
         },
       }),
       prisma.payment.count({ where }),
+      prisma.payment.findMany({
+        where: { status: PAYMENT_STATUS.PAID },
+        select: { amount: true, method: true, settlement_status: true },
+      }),
     ]);
 
-    return paginated(res, payments, total, page, limit);
+    return paginated(res, payments, total, page, limit, {
+      summary: summarizePaidPayments(paidPayments),
+    });
   } catch (err) {
     console.error('getPayments error:', err);
     return error(res, 'Không thể lấy danh sách thanh toán', 500);
+  }
+};
+
+/**
+ * PUT /admin/payments/:id/confirm-cash-settlement
+ * Admin xác nhận đã nhận đủ khoản tiền mặt mà kỹ thuật viên thu hộ.
+ */
+const confirmCashSettlement = async (req, res) => {
+  try {
+    const paymentId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(paymentId) || paymentId <= 0) {
+      return error(res, 'Mã giao dịch không hợp lệ', 400);
+    }
+
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+    if (note.length > 500) {
+      return error(res, 'Ghi chú đối soát không được vượt quá 500 ký tự', 400);
+    }
+
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            technicianProfile: { select: { user_id: true } },
+          },
+        },
+      },
+    });
+
+    if (!payment) return error(res, 'Không tìm thấy giao dịch', 404);
+    if (payment.method !== PAYMENT_METHOD.CASH) {
+      return error(res, 'Chỉ đối soát bàn giao đối với thanh toán tiền mặt', 400);
+    }
+    if (payment.status !== PAYMENT_STATUS.PAID) {
+      return error(res, 'Khách hàng chưa thanh toán nên chưa thể đối soát', 400);
+    }
+    if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.SETTLED) {
+      return error(res, 'Khoản tiền mặt này đã được đối soát trước đó', 409);
+    }
+    if (payment.settlement_status !== PAYMENT_SETTLEMENT_STATUS.PENDING) {
+      return error(res, 'Khoản tiền mặt chưa ở trạng thái chờ bàn giao', 400);
+    }
+
+    const settledAt = new Date();
+    const updateResult = await prisma.payment.updateMany({
+      where: {
+        id: paymentId,
+        method: PAYMENT_METHOD.CASH,
+        status: PAYMENT_STATUS.PAID,
+        settlement_status: PAYMENT_SETTLEMENT_STATUS.PENDING,
+      },
+      data: {
+        settlement_status: PAYMENT_SETTLEMENT_STATUS.SETTLED,
+        settled_at: settledAt,
+        settled_by: req.user.id,
+        settlement_note: note || 'Admin xác nhận đã nhận đủ tiền mặt từ kỹ thuật viên',
+      },
+    });
+
+    if (updateResult.count !== 1) {
+      return error(res, 'Giao dịch vừa được đối soát bởi một Admin khác', 409);
+    }
+
+    const technicianUserId = payment.booking?.technicianProfile?.user_id;
+    if (technicianUserId) {
+      try {
+        await prisma.notification.create({
+          data: {
+            user_id: technicianUserId,
+            title: 'Đã đối soát tiền mặt',
+            message: `HomeFix đã xác nhận nhận đủ ${Number(payment.amount).toLocaleString('vi-VN')}đ của đơn #${payment.booking_id}.`,
+            type: NOTIFICATION_TYPE.PAYMENT,
+            reference_id: payment.booking_id,
+          },
+        });
+      } catch (notificationError) {
+        console.error('Cash settlement notification error:', notificationError);
+      }
+    }
+
+    const updatedPayment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        confirmer: { select: { id: true, full_name: true } },
+        settler: { select: { id: true, full_name: true } },
+      },
+    });
+
+    return success(res, updatedPayment, 'Xác nhận bàn giao tiền mặt thành công');
+  } catch (err) {
+    console.error('confirmCashSettlement error:', err);
+    return error(res, 'Không thể xác nhận bàn giao tiền mặt', 500);
   }
 };
 
@@ -1522,21 +1772,38 @@ const resolveComplaint = async (req, res) => {
 };
 
 // ========================
-// DASHBOARD
+// DASHBOARD (UC-89: View Statistical Reports)
 // ========================
 
 /**
  * GET /admin/dashboard
- * Trả về các thống kê tổng hợp.
+ * Trả về các thống kê tổng hợp cho UC-89.
+ * Bổ sung: totalCustomers, totalTechnicians, complaintStats,
+ *          bookingTrend (30 ngày), revenueByDistrict
  */
 const getDashboard = async (req, res) => {
   try {
-    // Thống kê booking tổng quan
+    // === [UC-89] Thống kê booking tổng quan ===
     const [totalBookings, totalCompleted, totalCancelled] = await Promise.all([
       prisma.booking.count(),
       prisma.booking.count({ where: { status: BOOKING_STATUS.COMPLETED } }),
       prisma.booking.count({ where: { status: BOOKING_STATUS.CANCELLED } }),
     ]);
+
+    // === [UC-89] Tổng số khách hàng & kỹ thuật viên ===
+    const [totalCustomers, totalTechnicians, totalActiveTechnicians] = await Promise.all([
+      prisma.user.count({ where: { role: ROLES.CUSTOMER } }),
+      prisma.user.count({ where: { role: ROLES.TECHNICIAN } }),
+      prisma.technicianProfile.count({ where: { is_available: true } }),
+    ]);
+
+    // === [UC-89] Thống kê khiếu nại ===
+    const [totalComplaints, openComplaints, resolvedComplaints] = await Promise.all([
+      prisma.complaint.count(),
+      prisma.complaint.count({ where: { status: 'OPEN' } }),
+      prisma.complaint.count({ where: { status: 'RESOLVED' } }),
+    ]);
+    const complaintStats = { total: totalComplaints, open: openComplaints, resolved: resolvedComplaints };
 
     // Tổng doanh thu (sum of PAID payments)
     const revenueResult = await prisma.payment.aggregate({
@@ -1550,7 +1817,7 @@ const getDashboard = async (req, res) => {
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const paidPayments = await prisma.payment.findMany({
       where: { status: 'PAID', paid_at: { gte: sixMonthsAgo } },
-      select: { amount: true, paid_at: true },
+      select: { amount: true, paid_at: true, method: true, settlement_status: true },
     });
     // Nhóm theo tháng
     const revenueMap = {};
@@ -1566,6 +1833,27 @@ const getDashboard = async (req, res) => {
       month: key,
       revenue: revenueMap[key]
     }));
+
+    // === [UC-89] Xu hướng booking 30 ngày gần nhất (daily trend) ===
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentAllBookings = await prisma.booking.findMany({
+      where: { created_at: { gte: thirtyDaysAgo } },
+      select: { created_at: true },
+    });
+    const trendMap = {};
+    recentAllBookings.forEach((b) => {
+      const key = b.created_at.toISOString().slice(0, 10); // YYYY-MM-DD
+      trendMap[key] = (trendMap[key] || 0) + 1;
+    });
+    // Điền đủ 30 ngày kể cả ngày không có đơn
+    const bookingTrend = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      bookingTrend.push({ date: key, count: trendMap[key] || 0 });
+    }
 
     // Top 5 services theo số lượng booking
     const topServicesRaw = await prisma.booking.groupBy({
@@ -1619,9 +1907,28 @@ const getDashboard = async (req, res) => {
       booking_count: b._count.id,
     }));
 
+    // === [UC-89] Doanh thu theo khu vực ===
+    const revenueByDistrictData = await prisma.payment.findMany({
+      where: { status: 'PAID' },
+      select: { amount: true, booking: { select: { district_id: true } } },
+    });
+    const districtRevenueMap = {};
+    revenueByDistrictData.forEach((p) => {
+      const dId = p.booking?.district_id;
+      if (dId) {
+        districtRevenueMap[dId] = (districtRevenueMap[dId] || 0) + Number(p.amount);
+      }
+    });
+    const revenueByDistrict = Object.entries(districtRevenueMap).map(([dId, revenue]) => ({
+      district_id: parseInt(dId),
+      district_name: districtNames.find((d) => d.id === parseInt(dId))?.name || 'N/A',
+      revenue,
+    }));
+
     // Thống kê phương thức thanh toán
     const paymentMethodStatsRaw = await prisma.payment.groupBy({
       by: ['method'],
+      where: { status: PAYMENT_STATUS.PAID },
       _count: { id: true },
       _sum: { amount: true },
     });
@@ -1649,7 +1956,18 @@ const getDashboard = async (req, res) => {
       totalCompleted,
       totalCancelled,
       totalRevenue: Number(totalRevenue),
+      revenueSummary: summarizePaidPayments(await prisma.payment.findMany({
+        where: { status: PAYMENT_STATUS.PAID },
+        select: { amount: true, method: true, settlement_status: true },
+      })),
+      // [UC-89] Bổ sung thêm thống kê tổng quan
+      totalCustomers,
+      totalTechnicians,
+      totalActiveTechnicians,
+      complaintStats,
+      bookingTrend,
       revenueByMonth,
+      revenueByDistrict,
       topServices,
       topTechnicians,
       bookingsByStatus,
@@ -1660,6 +1978,165 @@ const getDashboard = async (req, res) => {
   } catch (err) {
     console.error('getDashboard error:', err);
     return error(res, 'Không thể lấy dữ liệu dashboard', 500);
+  }
+};
+
+/**
+ * GET /admin/payments/:id
+ * Chi tiết một payment kèm booking, customer, service, technician, quotation items.
+ */
+const getPaymentDetail = async (req, res) => {
+  try {
+    const paymentId = parseInt(req.params.id);
+
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        booking: {
+          include: {
+            customer: { select: { id: true, full_name: true, email: true, phone: true, avatar_url: true } },
+            technicianProfile: {
+              include: {
+                user: { select: { id: true, full_name: true, phone: true, email: true } },
+              },
+            },
+            service: { include: { category: { select: { id: true, name: true } } } },
+            deviceType: { select: { id: true, name: true } },
+            district: { select: { id: true, name: true } },
+            ward: { select: { id: true, name: true } },
+            voucher: true,
+            quotations: {
+              where: { status: 'ACCEPTED' },
+              include: { items: true },
+              take: 1,
+            },
+            statusHistories: {
+              orderBy: { created_at: 'desc' },
+              include: { user: { select: { id: true, full_name: true, role: true } } },
+            },
+          },
+        },
+        confirmer: { select: { id: true, full_name: true } },
+        settler: { select: { id: true, full_name: true } },
+      },
+    });
+
+    if (!payment) return error(res, 'Không tìm thấy giao dịch', 404);
+    return success(res, payment);
+  } catch (err) {
+    console.error('getPaymentDetail error:', err);
+    return error(res, 'Không thể lấy chi tiết giao dịch', 500);
+  }
+};
+
+/**
+ * GET /admin/vouchers/:id/usages
+ * Lịch sử sử dụng của một voucher cụ thể.
+ */
+const getVoucherUsages = async (req, res) => {
+  try {
+    const voucherId = parseInt(req.params.id);
+    const { skip, take, page, limit } = getPagination(req.query);
+
+    const voucher = await prisma.voucher.findUnique({ where: { id: voucherId } });
+    if (!voucher) return error(res, 'Voucher không tồn tại', 404);
+
+    const [usages, total] = await Promise.all([
+      prisma.voucherUsage.findMany({
+        where: { voucher_id: voucherId },
+        skip,
+        take,
+        orderBy: { used_at: 'desc' },
+        include: {
+          user: { select: { id: true, full_name: true, email: true, phone: true, avatar_url: true } },
+          booking: {
+            select: {
+              id: true,
+              status: true,
+              booking_date: true,
+              estimated_price: true,
+              final_price: true,
+              service: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }),
+      prisma.voucherUsage.count({ where: { voucher_id: voucherId } }),
+    ]);
+
+    return paginated(res, { voucher, usages }, total, page, limit);
+  } catch (err) {
+    console.error('getVoucherUsages error:', err);
+    return error(res, 'Không thể lấy lịch sử sử dụng voucher', 500);
+  }
+};
+/**
+ * GET /admin/reports/revenue
+ * Lấy báo cáo doanh thu theo khoảng thời gian
+ */
+const getRevenueReport = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const where = {
+      status: PAYMENT_STATUS.PAID,
+    };
+
+    if (startDate || endDate) {
+      where.paid_at = {};
+      if (startDate) where.paid_at.gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        where.paid_at.lte = end;
+      }
+    }
+
+    const payments = await prisma.payment.findMany({
+      where,
+      orderBy: { paid_at: 'desc' },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            status: true,
+            service: { select: { id: true, name: true } },
+            customer: { select: { id: true, full_name: true, phone: true } },
+            technicianProfile: {
+              include: { user: { select: { id: true, full_name: true } } }
+            }
+          }
+        }
+      }
+    });
+
+    const summary = summarizePaidPayments(payments);
+
+    // Xử lý dữ liệu biểu đồ theo ngày
+    const revenueByDayMap = new Map();
+    payments.forEach(p => {
+      if (!p.paid_at) return;
+      const dateKey = p.paid_at.toISOString().split('T')[0];
+      if (!revenueByDayMap.has(dateKey)) {
+        revenueByDayMap.set(dateKey, { date: dateKey, revenue: 0, vnpay: 0, cash: 0 });
+      }
+      const dayData = revenueByDayMap.get(dateKey);
+      const amount = Number(p.amount || 0);
+      dayData.revenue += amount;
+      if (p.method === PAYMENT_METHOD.VNPAY) dayData.vnpay += amount;
+      else if (p.method === PAYMENT_METHOD.CASH) dayData.cash += amount;
+    });
+
+    const revenueByDay = Array.from(revenueByDayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    return success(res, {
+      summary,
+      revenueByDay,
+      payments
+    });
+  } catch (err) {
+    console.error('getRevenueReport error:', err);
+    return error(res, 'Không thể lấy báo cáo doanh thu', 500);
   }
 };
 
@@ -1680,9 +2157,9 @@ module.exports = {
   // District & Ward
   getDistricts, createDistrict, updateDistrict, deleteDistrict, createWard, updateWard, deleteWard,
   // Voucher CRUD
-  getVouchers, createVoucher, updateVoucher, toggleVoucher,
+  getVouchers, createVoucher, updateVoucher, toggleVoucher, getVoucherUsages,
   // Payment & Complaint
-  getPayments, getComplaints, resolveComplaint,
+  getPayments, getPaymentDetail, confirmCashSettlement, getComplaints, resolveComplaint,
   // Dashboard
-  getDashboard,
+  getDashboard, getRevenueReport,
 };

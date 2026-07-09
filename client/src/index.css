@@ -624,3 +624,12 @@ a:hover {
 .fade-in-up {
   animation: fadeInUp 0.6s ease-out forwards;
 }
+
+/* Custom Scrollbar utility */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

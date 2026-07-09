@@ -10,6 +10,7 @@ export const BOOKING_STATUS = {
   INSPECTING: 'INSPECTING',
   QUOTED: 'QUOTED',
   COMPLETING: 'COMPLETING',
+  AWAITING_PAYMENT: 'AWAITING_PAYMENT',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
 };
@@ -22,6 +23,7 @@ export const BOOKING_STATUS_LABELS = {
   INSPECTING: 'Đang khảo sát',
   QUOTED: 'Đã báo giá',
   COMPLETING: 'Đang sửa chữa',
+  AWAITING_PAYMENT: 'Chờ thanh toán',
   COMPLETED: 'Hoàn thành',
   CANCELLED: 'Đã hủy',
 };
@@ -34,6 +36,7 @@ export const BOOKING_STATUS_COLORS = {
   INSPECTING: { color: '#8b5cf6', bg: '#ede9fe' },
   QUOTED: { color: '#f97316', bg: '#ffedd5' },
   COMPLETING: { color: '#14b8a6', bg: '#ccfbf1' },
+  AWAITING_PAYMENT: { color: '#d97706', bg: '#fef3c7' },
   COMPLETED: { color: '#22c55e', bg: '#dcfce7' },
   CANCELLED: { color: '#ef4444', bg: '#fee2e2' },
 };
@@ -46,6 +49,7 @@ export const BOOKING_STATUS_STEPS = [
   BOOKING_STATUS.INSPECTING,
   BOOKING_STATUS.QUOTED,
   BOOKING_STATUS.COMPLETING,
+  BOOKING_STATUS.AWAITING_PAYMENT,
   BOOKING_STATUS.COMPLETED,
 ];
 
@@ -89,3 +93,10 @@ export const ROLE_LABELS = {
 
 // Customer-cancellable statuses
 export const CUSTOMER_CANCELLABLE = ['PENDING', 'CONFIRMED'];
+
+export const BOOKING_TIME_SLOTS = [
+  { value: '08:00-10:00', start: '08:00', end: '10:00', label: '08:00 - 10:00' },
+  { value: '10:00-12:00', start: '10:00', end: '12:00', label: '10:00 - 12:00' },
+  { value: '13:00-15:00', start: '13:00', end: '15:00', label: '13:00 - 15:00' },
+  { value: '15:00-17:00', start: '15:00', end: '17:00', label: '15:00 - 17:00' },
+];

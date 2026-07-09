@@ -8,6 +8,11 @@ import { formatVND, formatDateTime } from '../../utils/helpers';
 
 const { Title, Text } = Typography;
 
+const toNumber = (value) => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export default function QuotationDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -16,7 +21,7 @@ export default function QuotationDetailPage() {
 
   const { data: quotationData, isLoading, refetch } = useQuery({
     queryKey: ['quotation-detail', id],
-    queryFn: () => quotationApi.getByBooking(id),
+    queryFn: () => quotationApi.getById(id),
   });
 
   const quotation = quotationData?.data;
@@ -28,6 +33,14 @@ export default function QuotationDetailPage() {
   if (!quotation) {
     return <div>Không tìm thấy báo giá</div>;
   }
+
+  const quotationItems = quotation.quotationItems || quotation.items || [];
+  const quotationSubtotal = quotationItems.reduce(
+    (sum, item) => sum + (toNumber(item.quantity) * toNumber(item.unit_price)),
+    0
+  );
+  const discountAmount = toNumber(quotation.booking?.discount_amount);
+  const payableAmount = Math.max(0, quotationSubtotal - discountAmount);
 
   const columns = [
     {
@@ -45,12 +58,12 @@ export default function QuotationDetailPage() {
       title: 'Đơn giá',
       dataIndex: 'unit_price',
       key: 'unit_price',
-      render: (price) => formatVND(price),
+      render: (price) => formatVND(toNumber(price)),
     },
     {
       title: 'Thành tiền',
       key: 'total',
-      render: (_, record) => <Text strong>{formatVND(record.quantity * record.unit_price)}</Text>,
+      render: (_, record) => <Text strong>{formatVND(toNumber(record.quantity) * toNumber(record.unit_price))}</Text>,
     },
   ];
 
@@ -97,22 +110,36 @@ export default function QuotationDetailPage() {
       <Card className="glass-card" style={{ marginBottom: 24 }}>
         <Table 
           columns={columns} 
-          dataSource={quotation.quotationItems || quotation.items || []} 
+          dataSource={quotationItems}
           rowKey={(record, index) => index}
           pagination={false}
-          summary={pageData => {
-            let total = 0;
-            pageData.forEach(({ unit_price, quantity }) => {
-              total += unit_price * quantity;
-            });
+          summary={() => {
             return (
               <>
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0} colSpan={3} align="right">
-                    <Text strong>Tổng cộng:</Text>
+                    <Text strong>Tạm tính báo giá:</Text>
                   </Table.Summary.Cell>
                   <Table.Summary.Cell index={1}>
-                    <Text strong style={{ color: 'var(--orange)', fontSize: 18 }}>{formatVND(total)}</Text>
+                    <Text strong>{formatVND(quotationSubtotal)}</Text>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+                {discountAmount > 0 && (
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={3} align="right">
+                      <Text type="success" strong>Giảm giá voucher:</Text>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={1}>
+                      <Text strong style={{ color: 'var(--success)' }}>- {formatVND(discountAmount)}</Text>
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                )}
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={3} align="right">
+                    <Text strong>Khách cần thanh toán:</Text>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}>
+                    <Text strong style={{ color: 'var(--orange)', fontSize: 18 }}>{formatVND(payableAmount)}</Text>
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               </>

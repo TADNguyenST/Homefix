@@ -3,12 +3,16 @@ import { Card, Steps, Button, Typography, Tag, Descriptions, Space, Spin, messag
 import { EnvironmentOutlined, PhoneOutlined, UserOutlined, FormOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { technicianApi } from '../../api/technicianApi';
-import { bookingApi } from '../../api/bookingApi'; // fallback or shared
 import { useParams, useNavigate } from 'react-router-dom';
 import { formatVND, formatDate, formatDateTime } from '../../utils/helpers';
 import { BOOKING_STATUS_STEPS, BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS } from '../../utils/constants';
 
 const { Title, Text } = Typography;
+
+const toNumber = (value) => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function TechJobDetailPage() {
   const { id } = useParams();
@@ -30,6 +34,16 @@ export default function TechJobDetailPage() {
 
   const currentStepIndex = BOOKING_STATUS_STEPS.indexOf(job.status);
   const colorCfg = BOOKING_STATUS_COLORS[job.status] || { color: '#000', bg: '#eee' };
+  const currentQuotation = job.quotations?.find(q => q.status === 'PENDING')
+    || job.quotations?.find(q => q.status === 'ACCEPTED')
+    || job.quotations?.[0];
+  const quotationSubtotal = currentQuotation
+    ? toNumber(currentQuotation.total_extra_price)
+    : toNumber(job.final_price ?? job.payment?.amount ?? job.estimated_price);
+  const discountAmount = currentQuotation ? toNumber(job.discount_amount) : 0;
+  const payableAmount = currentQuotation
+    ? Math.max(0, quotationSubtotal - discountAmount)
+    : toNumber(job.final_price ?? job.payment?.amount ?? job.estimated_price);
 
   const handleUpdateStatus = async (newStatus) => {
     try {
@@ -47,7 +61,7 @@ export default function TechJobDetailPage() {
   const handleConfirmCash = () => {
     Modal.confirm({
       title: 'Xác nhận thu tiền mặt?',
-      content: `Bạn xác nhận đã thu đủ số tiền ${formatVND(Number(job.final_price || job.estimated_price || 0))} từ khách hàng?`,
+      content: `Bạn xác nhận đã thu đủ số tiền ${formatVND(payableAmount)} từ khách hàng?`,
       onOk: async () => {
         try {
           await technicianApi.confirmCash(id);
@@ -64,9 +78,53 @@ export default function TechJobDetailPage() {
     switch (job.status) {
       case 'ASSIGNED':
         return (
-          <Button type="primary" onClick={() => handleUpdateStatus('IN_PROGRESS')} loading={loadingAction}>
-            Bắt đầu di chuyển
-          </Button>
+          <Space>
+            <Button type="primary" onClick={async () => {
+              try {
+                setLoadingAction(true);
+                await technicianApi.acceptJob(id);
+                message.success('Đã nhận công việc và chuyển sang trạng thái đang thực hiện');
+                refetch();
+              } catch (err) {
+                message.error(err.message || 'Lỗi khi nhận việc');
+              } finally {
+                setLoadingAction(false);
+              }
+            }} loading={loadingAction}>
+              Nhận công việc (Bắt đầu di chuyển)
+            </Button>
+            <Button danger onClick={() => {
+              let reason = '';
+              Modal.confirm({
+                title: 'Từ chối công việc?',
+                content: (
+                  <div style={{ marginTop: 12 }}>
+                    <p>Vui lòng nhập lý do từ chối:</p>
+                    <textarea 
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: 4, border: '1px solid #d9d9d9', outline: 'none' }} 
+                      rows={3}
+                      placeholder="Lý do từ chối nhận đơn..."
+                      onChange={(e) => { reason = e.target.value; }}
+                    />
+                  </div>
+                ),
+                onOk: async () => {
+                  try {
+                    setLoadingAction(true);
+                    await technicianApi.rejectJob(id, { reason });
+                    message.success('Đã từ chối công việc');
+                    navigate('/technician/jobs');
+                  } catch (err) {
+                    message.error(err.message || 'Lỗi khi từ chối việc');
+                  } finally {
+                    setLoadingAction(false);
+                  }
+                }
+              });
+            }} loading={loadingAction}>
+              Từ chối nhận việc
+            </Button>
+          </Space>
         );
       case 'IN_PROGRESS':
         return (
@@ -86,11 +144,11 @@ export default function TechJobDetailPage() {
         );
       case 'COMPLETING':
         return (
-          <Button type="primary" onClick={() => handleUpdateStatus('COMPLETED')} loading={loadingAction}>
+          <Button type="primary" onClick={() => handleUpdateStatus('AWAITING_PAYMENT')} loading={loadingAction}>
             Hoàn thành sửa chữa
           </Button>
         );
-      case 'COMPLETED':
+      case 'AWAITING_PAYMENT':
         if (job.payment_method === 'CASH' && job.payment?.status === 'UNPAID') {
           return (
             <Button type="primary" style={{ background: 'var(--success)' }} onClick={handleConfirmCash}>
@@ -98,6 +156,8 @@ export default function TechJobDetailPage() {
             </Button>
           );
         }
+        return <Tag color="warning">Chờ khách hàng thanh toán</Tag>;
+      case 'COMPLETED':
         return <Tag color="success">Công việc đã hoàn tất</Tag>;
       default:
         return null;
@@ -149,11 +209,21 @@ export default function TechJobDetailPage() {
             </Descriptions>
           </Card>
 
-          {['QUOTED', 'COMPLETING', 'COMPLETED'].includes(job.status) && (
+          {['QUOTED', 'COMPLETING', 'AWAITING_PAYMENT', 'COMPLETED'].includes(job.status) && (
             <Card title="Báo giá & Thanh toán" className="glass-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <Text>Tổng tiền dịch vụ và vật tư:</Text>
-                <Title level={4} style={{ color: 'var(--orange)', margin: 0 }}>{formatVND(Number(job.final_price || job.estimated_price || 0))}</Title>
+                <Text>Tạm tính báo giá:</Text>
+                <Text strong>{formatVND(quotationSubtotal)}</Text>
+              </div>
+              {discountAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <Text type="success">Giảm giá voucher:</Text>
+                  <Text strong style={{ color: 'var(--success)' }}>- {formatVND(discountAmount)}</Text>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                <Text>Khách cần thanh toán:</Text>
+                <Title level={4} style={{ color: 'var(--orange)', margin: 0 }}>{formatVND(payableAmount)}</Title>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                 <Text>Hình thức thanh toán:</Text>
@@ -165,6 +235,16 @@ export default function TechJobDetailPage() {
                   {job.payment?.status === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}
                 </Tag>
               </div>
+              {job.payment_method === 'CASH' && job.payment?.status === 'PAID' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
+                  <Text>Trạng thái bàn giao:</Text>
+                  <Tag color={job.payment?.settlement_status === 'SETTLED' ? 'success' : 'warning'}>
+                    {job.payment?.settlement_status === 'SETTLED'
+                      ? 'HomeFix đã nhận tiền'
+                      : 'Chờ bàn giao cho HomeFix'}
+                  </Tag>
+                </div>
+              )}
             </Card>
           )}
         </Space>
