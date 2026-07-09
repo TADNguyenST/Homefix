@@ -1,8 +1,9 @@
 import axiosClient from './axiosClient';
 
 export const adminApi = {
-  // Dashboard
+  // DASHBOARD & REPORTS
   getDashboard: () => axiosClient.get('/admin/dashboard'),
+  getRevenueReport: (params) => axiosClient.get('/admin/reports/revenue', { params }),
 
   // Bookings
   getBookings: (params) => axiosClient.get('/admin/bookings', { params }),

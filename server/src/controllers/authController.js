@@ -18,7 +18,7 @@ const register = async (req, res) => {
         return error(res, 'Tài khoản gắn với email này đã bị Admin khóa.', 403);
       }
       if (!existingUser.is_active) {
-        return error(res, 'Email đã được đăng ký nhưng chưa xác thực. Vui lòng dùng chức năng "Gửi lại OTP".', 409);
+        return error(res, 'Email đã được đăng ký nhưng chưa xác thực. Vui lòng đăng ký lại để xác thực tài khoản.', 409);
       }
       return error(res, 'Email đã được đăng ký', 409);
     }
@@ -345,6 +345,17 @@ const resetPassword = async (req, res) => {
   }
 };
 
+//Logout
+const logout = async (req, res) => {
+  try {
+    activeSessions.delete(req.user.id);
+    return success(res, null, 'Đăng xuất thành công');
+  } catch (err) {
+    console.error('Logout error:', err);
+    return error(res, 'Đăng xuất thất bại', 500);
+  }
+};
+
 //Get xem tk
 const getMe = async (req, res) => {
   try {
@@ -377,6 +388,15 @@ const getMe = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const { full_name, phone, avatar_url } = req.body;
+
+    if (phone) {
+      const existingPhone = await prisma.user.findFirst({
+        where: { phone, id: { not: req.user.id } }
+      });
+      if (existingPhone) {
+        return error(res, 'Số điện thoại này đã được sử dụng', 409);
+      }
+    }
 
     const user = await prisma.user.update({
       where: { id: req.user.id },
@@ -438,6 +458,7 @@ module.exports = {
   verifyOtp,
   resendOtp,
   login,
+  logout,
   forgotPassword,
   resetPassword,
   getMe,

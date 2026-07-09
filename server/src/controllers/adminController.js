@@ -1,10 +1,3 @@
-// ============================================================
-// HOMEFIX AI — Admin Controller
-// Quản lý toàn bộ nghiệp vụ Admin: Booking dispatch, User,
-// Technician, Category, Service, DeviceType, District, Ward,
-// Voucher, Payment, Complaint, Dashboard
-// ============================================================
-
 const bcrypt = require('bcrypt');
 const prisma = require('../utils/prisma');
 const { success, error, paginated } = require('../utils/response');
@@ -2070,6 +2063,75 @@ const getVoucherUsages = async (req, res) => {
     return error(res, 'Không thể lấy lịch sử sử dụng voucher', 500);
   }
 };
+/**
+ * GET /admin/reports/revenue
+ * Lấy báo cáo doanh thu theo khoảng thời gian
+ */
+const getRevenueReport = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const where = {
+      status: PAYMENT_STATUS.PAID,
+    };
+
+    if (startDate || endDate) {
+      where.paid_at = {};
+      if (startDate) where.paid_at.gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        where.paid_at.lte = end;
+      }
+    }
+
+    const payments = await prisma.payment.findMany({
+      where,
+      orderBy: { paid_at: 'desc' },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            status: true,
+            service: { select: { id: true, name: true } },
+            customer: { select: { id: true, full_name: true, phone: true } },
+            technicianProfile: {
+              include: { user: { select: { id: true, full_name: true } } }
+            }
+          }
+        }
+      }
+    });
+
+    const summary = summarizePaidPayments(payments);
+
+    // Xử lý dữ liệu biểu đồ theo ngày
+    const revenueByDayMap = new Map();
+    payments.forEach(p => {
+      if (!p.paid_at) return;
+      const dateKey = p.paid_at.toISOString().split('T')[0];
+      if (!revenueByDayMap.has(dateKey)) {
+        revenueByDayMap.set(dateKey, { date: dateKey, revenue: 0, vnpay: 0, cash: 0 });
+      }
+      const dayData = revenueByDayMap.get(dateKey);
+      const amount = Number(p.amount || 0);
+      dayData.revenue += amount;
+      if (p.method === PAYMENT_METHOD.VNPAY) dayData.vnpay += amount;
+      else if (p.method === PAYMENT_METHOD.CASH) dayData.cash += amount;
+    });
+
+    const revenueByDay = Array.from(revenueByDayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    return success(res, {
+      summary,
+      revenueByDay,
+      payments
+    });
+  } catch (err) {
+    console.error('getRevenueReport error:', err);
+    return error(res, 'Không thể lấy báo cáo doanh thu', 500);
+  }
+};
 
 module.exports = {
   // Booking Dispatch
@@ -2092,5 +2154,5 @@ module.exports = {
   // Payment & Complaint
   getPayments, getPaymentDetail, confirmCashSettlement, getComplaints, resolveComplaint,
   // Dashboard
-  getDashboard,
+  getDashboard, getRevenueReport,
 };

@@ -1,17 +1,8 @@
-// ============================================================
-// HOMEFIX AI — AI Controller
-// Endpoints: chẩn đoán sự cố, gợi ý thợ, phân tích sentiment
-// ============================================================
-
 const prisma = require('../utils/prisma');
 const { success, error } = require('../utils/response');
 const { diagnoseIssue, analyzeSentiment, recommendTechnicians } = require('../services/aiService');
 
-/**
- * POST /ai/diagnose
- * Auth required. Phân tích sự cố bằng AI và lưu kết quả.
- * Body: { description, base64_image?, booking_id? }
- */
+//Phân tích AI và lưu kết quả
 const diagnose = async (req, res) => {
   try {
     const { description, base64_image = null, booking_id } = req.body;
@@ -53,14 +44,14 @@ const diagnose = async (req, res) => {
     }, 'Phân tích sự cố thành công');
   } catch (err) {
     console.error('diagnose error:', err);
+    if (err.message === 'SPAM_DETECTED') {
+      return error(res, 'Nội dung bạn nhập không hợp lệ hoặc không liên quan đến dịch vụ sửa chữa nhà cửa. Vui lòng thử lại!', 400);
+    }
     return error(res, 'Không thể phân tích sự cố', 500);
   }
 };
 
-/**
- * GET /ai/recommend-tech/:bookingId
- * ADMIN only. Gợi ý kỹ thuật viên phù hợp cho booking.
- */
+//Gợi ý thợ
 const getRecommendedTechnicians = async (req, res) => {
   try {
     const { bookingId } = req.params;
@@ -73,11 +64,7 @@ const getRecommendedTechnicians = async (req, res) => {
   }
 };
 
-/**
- * POST /ai/sentiment
- * Internal use (được gọi từ review module).
- * Body: { text }
- */
+
 const sentiment = async (req, res) => {
   try {
     const { text } = req.body;

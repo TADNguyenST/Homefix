@@ -5,6 +5,7 @@ const {
   getServices,
   getServiceById,
   getDeviceTypes,
+  getPopularServices,
 } = require('../controllers/serviceController');
 
 // ==================== All Routes are Public ====================
@@ -17,6 +18,9 @@ router.get('/device-types', getDeviceTypes);
 
 // Lấy danh sách dịch vụ (có phân trang, lọc theo category_id, tìm kiếm theo tên)
 router.get('/', getServices);
+
+// Lấy danh sách 4 dịch vụ nổi bật
+router.get('/popular', getPopularServices);
 
 // Lấy chi tiết dịch vụ theo ID
 router.get('/:id', getServiceById);
