@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Table, Button, Typography, Space, Modal, Form, Input, Select, message, Tag, Switch } from 'antd';
-import { EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PlusOutlined, UndoOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
 
@@ -10,6 +10,7 @@ const { Option } = Select;
 export default function AdminDeviceTypesPage() {
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState(null);
+  const [isShowingTrash, setIsShowingTrash] = useState(false);
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -17,8 +18,8 @@ export default function AdminDeviceTypesPage() {
   const [form] = Form.useForm();
 
   const { data: deviceData, isLoading, refetch } = useQuery({
-    queryKey: ['admin-device-types', search, filterCategory],
-    queryFn: () => adminApi.getDeviceTypes({ search, category_id: filterCategory }),
+    queryKey: ['admin-device-types', search, filterCategory, isShowingTrash],
+    queryFn: () => adminApi.getDeviceTypes({ search, category_id: filterCategory, is_deleted: isShowingTrash }),
   });
 
   const { data: catData } = useQuery({
@@ -89,6 +90,16 @@ export default function AdminDeviceTypesPage() {
     });
   };
 
+  const handleRestore = async (id) => {
+    try {
+      await adminApi.updateDeviceType(id, { is_deleted: false });
+      message.success('Đã khôi phục loại thiết bị');
+      refetch();
+    } catch (err) {
+      message.error(err.response?.data?.message || err.message || 'Lỗi khi khôi phục');
+    }
+  };
+
   const columns = [
     {
       title: 'Thuộc danh mục',
@@ -114,10 +125,10 @@ export default function AdminDeviceTypesPage() {
       title: 'Trạng thái',
       key: 'is_active',
       render: (_, record) => (
-        <Switch 
-          checked={record.is_active} 
-          onChange={(checked) => handleToggleStatus(record, checked)} 
-          checkedChildren="Bật" 
+        <Switch
+          checked={record.is_active}
+          onChange={(checked) => handleToggleStatus(record, checked)}
+          checkedChildren="Bật"
           unCheckedChildren="Tắt"
         />
       ),
@@ -128,11 +139,19 @@ export default function AdminDeviceTypesPage() {
       key: 'action',
       render: (_, record) => (
         <Space>
-          <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} />
-          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+          {isShowingTrash ? (
+            <Button type="primary" ghost icon={<UndoOutlined />} onClick={() => handleRestore(record.id)}>
+              Khôi phục
+            </Button>
+          ) : (
+            <>
+              <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} />
+              <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)} />
+            </>
+          )}
         </Space>
       ),
-      width: 120,
+      width: 130,
     },
   ];
 
@@ -143,24 +162,37 @@ export default function AdminDeviceTypesPage() {
           <Title level={2} style={{ color: 'var(--navy)', marginBottom: 8 }}>Loại thiết bị</Title>
           <p>Quản lý các loại thiết bị hỗ trợ sửa chữa (Máy lạnh, Bồn cầu,...)</p>
         </div>
-        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
-          Thêm loại thiết bị
-        </Button>
+        <Space>
+          <Button
+            type={isShowingTrash ? "default" : "dashed"}
+            size="large"
+            danger={!isShowingTrash}
+            icon={isShowingTrash ? null : <DeleteOutlined />}
+            onClick={() => setIsShowingTrash(!isShowingTrash)}
+          >
+            {isShowingTrash ? "Quay lại danh sách" : "Đã xóa"}
+          </Button>
+          {!isShowingTrash && (
+            <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
+              Thêm loại thiết bị
+            </Button>
+          )}
+        </Space>
       </div>
 
       <div style={{ background: '#fff', padding: 24, borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}>
-        
+
         {/* Lọc và Tìm kiếm */}
         <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <Input.Search 
-            placeholder="Tìm loại thiết bị theo tên" 
-            allowClear 
+          <Input.Search
+            placeholder="Tìm loại thiết bị theo tên"
+            allowClear
             onSearch={(value) => setSearch(value)}
             style={{ width: 300 }}
           />
-          <Select 
-            placeholder="Lọc theo danh mục" 
-            allowClear 
+          <Select
+            placeholder="Lọc theo danh mục"
+            allowClear
             style={{ width: 250 }}
             onChange={(val) => setFilterCategory(val)}
           >
@@ -170,9 +202,9 @@ export default function AdminDeviceTypesPage() {
           </Select>
         </div>
 
-        <Table 
-          columns={columns} 
-          dataSource={deviceTypes} 
+        <Table
+          columns={columns}
+          dataSource={deviceTypes}
           rowKey="id"
           loading={isLoading}
           pagination={{ pageSize: 15 }}
@@ -191,11 +223,11 @@ export default function AdminDeviceTypesPage() {
               {categories.map(c => <Option key={c.id} value={c.id}>{c.name}</Option>)}
             </Select>
           </Form.Item>
-          
+
           <Form.Item name="name" label="Tên loại thiết bị" rules={[{ required: true, message: 'Vui lòng nhập tên' }]}>
             <Input placeholder="Vd: Máy lạnh Inverter" />
           </Form.Item>
-          
+
           <Form.Item name="description" label="Mô tả">
             <Input.TextArea rows={3} placeholder="Mô tả về loại thiết bị này..." />
           </Form.Item>

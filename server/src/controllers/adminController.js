@@ -13,6 +13,7 @@ const {
   PAYMENT_STATUS,
   PAYMENT_SETTLEMENT_STATUS,
 } = require('../config/constants');
+const { sendTechnicianAccountEmail } = require('../utils/mailer');
 
 const summarizePaidPayments = (payments) => payments.reduce((summary, payment) => {
   const amount = Number(payment.amount || 0);
@@ -765,6 +766,9 @@ const createTechnician = async (req, res) => {
       return { user, profile };
     });
 
+    // Gửi email thông báo tài khoản cho thợ (Chạy ngầm không dùng await để không block API)
+    sendTechnicianAccountEmail(email, full_name, BUSINESS_RULES.DEFAULT_TECH_PASSWORD).catch(err => console.error("Lỗi gửi email thợ:", err));
+
     return success(res, {
       id: result.user.id,
       email: result.user.email,
@@ -928,10 +932,10 @@ const updateTechnicianSchedule = async (req, res) => {
  */
 const getCategories = async (req, res) => {
   try {
-    const { search, is_active } = req.query;
+    const { search, is_active, is_deleted } = req.query;
 
     // [UC-73] Xây dựng điều kiện filter
-    const where = {};
+    const where = { is_deleted: is_deleted === 'true' };
     if (search) where.name = { contains: search, mode: 'insensitive' };
     if (is_active !== undefined) where.is_active = is_active === 'true';
 
@@ -977,7 +981,7 @@ const createCategory = async (req, res) => {
 const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, icon_url, is_active } = req.body;
+    const { name, description, icon_url, is_active, is_deleted } = req.body;
 
     // Nếu đổi tên, kiểm tra trùng
     if (name) {
@@ -994,6 +998,7 @@ const updateCategory = async (req, res) => {
         ...(description !== undefined && { description }),
         ...(icon_url !== undefined && { icon_url }),
         ...(is_active !== undefined && { is_active }),
+        ...(is_deleted !== undefined && { is_deleted }),
       },
     });
     return success(res, category, 'Cập nhật danh mục thành công');
@@ -1018,8 +1023,8 @@ const deleteCategory = async (req, res) => {
       return error(res, 'Không thể xóa danh mục có dịch vụ', 400);
     }
 
-    await prisma.serviceCategory.delete({ where: { id: categoryId } });
-    return success(res, null, 'Xóa danh mục thành công');
+    await prisma.serviceCategory.update({ where: { id: categoryId }, data: { is_deleted: true } });
+    return success(res, null, 'Đã chuyển danh mục vào thùng rác');
   } catch (err) {
     console.error('deleteCategory error:', err);
     return error(res, 'Không thể xóa danh mục', 500);
@@ -1038,10 +1043,10 @@ const deleteCategory = async (req, res) => {
 const getServices = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
-    const { search, category_id, is_active } = req.query;
+    const { search, category_id, is_active, is_deleted } = req.query;
 
     // [UC-77] Xây dựng điều kiện filter
-    const where = {};
+    const where = { is_deleted: is_deleted === 'true' };
     if (search) where.name = { contains: search, mode: 'insensitive' };
     if (category_id) where.category_id = parseInt(category_id);
     if (is_active !== undefined) where.is_active = is_active === 'true';
@@ -1090,7 +1095,7 @@ const createService = async (req, res) => {
 const updateService = async (req, res) => {
   try {
     const { id } = req.params;
-    const { category_id, name, description, base_price, estimated_duration, image_url, is_active } = req.body;
+    const { category_id, name, description, base_price, estimated_duration, image_url, is_active, is_deleted } = req.body;
 
     const service = await prisma.service.update({
       where: { id: parseInt(id) },
@@ -1102,6 +1107,7 @@ const updateService = async (req, res) => {
         ...(estimated_duration !== undefined && { estimated_duration }),
         ...(image_url !== undefined && { image_url }),
         ...(is_active !== undefined && { is_active }),
+        ...(is_deleted !== undefined && { is_deleted }),
       },
       include: { category: { select: { id: true, name: true } } },
     });
@@ -1134,10 +1140,10 @@ const deleteService = async (req, res) => {
 
     const service = await prisma.service.update({
       where: { id: serviceId },
-      data: { is_active: false },
+      data: { is_deleted: true },
     });
 
-    return success(res, service, 'Dịch vụ đã được ẩn');
+    return success(res, service, 'Đã chuyển dịch vụ vào thùng rác');
   } catch (err) {
     console.error('deleteService error:', err);
     return error(res, 'Không thể xóa dịch vụ', 500);
@@ -1154,10 +1160,10 @@ const deleteService = async (req, res) => {
  */
 const getDeviceTypes = async (req, res) => {
   try {
-    const { search, category_id } = req.query;
+    const { search, category_id, is_deleted } = req.query;
 
     // [UC-81] Xây dựng điều kiện filter
-    const where = {};
+    const where = { is_deleted: is_deleted === 'true' };
     if (search) where.name = { contains: search, mode: 'insensitive' };
     if (category_id) where.category_id = parseInt(category_id);
 
@@ -1198,7 +1204,7 @@ const createDeviceType = async (req, res) => {
 const updateDeviceType = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, is_active, category_id } = req.body;
+    const { name, description, is_active, category_id, is_deleted } = req.body;
     const deviceType = await prisma.deviceType.update({
       where: { id: parseInt(id) },
       data: {
@@ -1206,6 +1212,7 @@ const updateDeviceType = async (req, res) => {
         ...(description !== undefined && { description }),
         ...(is_active !== undefined && { is_active }),
         ...(category_id !== undefined && { category_id: category_id || null }),
+        ...(is_deleted !== undefined && { is_deleted }),
       },
       include: { category: { select: { id: true, name: true } } },
     });
@@ -1230,8 +1237,8 @@ const deleteDeviceType = async (req, res) => {
       return error(res, 'Không thể xóa loại thiết bị đang được sử dụng trong đơn hàng', 400);
     }
 
-    await prisma.deviceType.delete({ where: { id: deviceTypeId } });
-    return success(res, null, 'Xóa loại thiết bị thành công');
+    await prisma.deviceType.update({ where: { id: deviceTypeId }, data: { is_deleted: true } });
+    return success(res, null, 'Đã chuyển loại thiết bị vào thùng rác');
   } catch (err) {
     console.error('deleteDeviceType error:', err);
     return error(res, 'Không thể xóa loại thiết bị', 500);
