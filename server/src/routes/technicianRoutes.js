@@ -7,6 +7,7 @@ const router = express.Router();
 const { authMiddleware, roleMiddleware } = require('../middlewares/authMiddleware');
 const { validate, createQuotationSchema, updateJobStatusSchema } = require('../middlewares/validators');
 const {
+  getAvailableTechnicians,
   getAssignedJobs,
   getJobDetail,
   acceptJob,
@@ -18,6 +19,8 @@ const {
   getJobHistory,
   getMyRating,
 } = require('../controllers/technicianController');
+
+router.get('/available', authMiddleware, roleMiddleware(['CUSTOMER']), getAvailableTechnicians);
 
 // Tất cả routes đều yêu cầu TECHNICIAN role
 router.use(authMiddleware, roleMiddleware(['TECHNICIAN']));

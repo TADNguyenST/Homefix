@@ -50,8 +50,12 @@ const getSmartMockDiagnosis = async (description) => {
     const allServices = await prisma.service.findMany({
       select: { id: true, name: true, base_price: true }
     });
+    const allDeviceTypes = await prisma.deviceType.findMany({
+      select: { id: true, name: true, category_id: true }
+    });
 
     let matchedServices = [];
+    let deviceTypeId = null;
     let errorDesc = 'Sự cố cần kiểm tra thực tế để xác định chính xác.';
     let solution = 'Kỹ thuật viên sẽ đến tận nơi đo đạc và đưa ra phương án sửa chữa.';
     let severity = 'MEDIUM';
@@ -63,6 +67,7 @@ const getSmartMockDiagnosis = async (description) => {
 
     if (descLower.includes('máy lạnh') || descLower.includes('điều hòa') || descLower.includes('lạnh')) {
       matchedServices = allServices.filter(s => s.name.toLowerCase().includes('máy lạnh') || s.name.toLowerCase().includes('điều hòa') || s.name.toLowerCase().includes('lạnh'));
+      deviceTypeId = allDeviceTypes.find(d => d.name.toLowerCase().includes('máy lạnh'))?.id || null;
       safetyTips = [
         "Tắt Aptomat riêng của máy lạnh trước khi thợ tiến hành mở vỏ máy.",
         "Nếu điều hòa có mùi khét, cần ngắt điện ngay lập tức để phòng ngừa chập cháy cuộn dây quạt.",
@@ -76,7 +81,14 @@ const getSmartMockDiagnosis = async (description) => {
         solution = 'Kỹ thuật viên sẽ kiểm tra áp suất gas và linh kiện bo mạch/tụ điện để khắc phục.';
       }
     } else if (descLower.includes('nước') || descLower.includes('vòi') || descLower.includes('ống') || descLower.includes('bồn') || descLower.includes('toilet')) {
-      matchedServices = allServices.filter(s => s.name.toLowerCase().includes('nước') || s.name.toLowerCase().includes('ống') || s.name.toLowerCase().includes('bồn') || s.name.toLowerCase().includes('vòi'));
+      matchedServices = allServices.filter(s => {
+        const name = s.name.toLowerCase();
+        if (name.includes('máy lạnh') || name.includes('máy giặt') || name.includes('tủ lạnh')) return false;
+        return name.includes('nước') || name.includes('ống') || name.includes('bồn') || name.includes('vòi');
+      });
+      if (descLower.includes('bồn cầu') || descLower.includes('toilet')) {
+        deviceTypeId = allDeviceTypes.find(d => d.name.toLowerCase().includes('bồn cầu'))?.id || null;
+      }
       errorDesc = 'Hệ thống nước bị rò rỉ hoặc tắc nghẽn cục bộ.';
       solution = 'Kiểm tra đường ống, thay thế các khớp nối bị hở hoặc thông tắc đường ống.';
       safetyTips = [
@@ -115,6 +127,7 @@ const getSmartMockDiagnosis = async (description) => {
     return {
       severity,
       service_id: serviceId,
+      device_type_id: deviceTypeId,
       suggested_services: suggestedServiceNames,
       diagnosis_error: errorDesc,
       diagnosis_solution: solution,
@@ -156,12 +169,16 @@ const diagnoseIssue = async (description, base64Image = null) => {
   }
 
   try {
-    // 1. Fetch toàn bộ danh sách dịch vụ từ DB làm Context
+    // 1. Fetch toàn bộ danh sách dịch vụ và thiết bị từ DB làm Context
     const services = await prisma.service.findMany({
       select: { id: true, name: true, description: true }
     });
+    const deviceTypes = await prisma.deviceType.findMany({
+      select: { id: true, name: true }
+    });
 
     const servicesContext = services.map(s => `- ID: ${s.id} | Tên: ${s.name}`).join('\n');
+    const deviceTypesContext = deviceTypes.map(d => `- ID: ${d.id} | Tên: ${d.name}`).join('\n');
 
     // 2. Xây dựng Prompt
     const promptText = `Bạn là CHUYÊN GIA KỸ THUẬT ĐIỆN LẠNH VÀ ĐIỆN GIA DỤNG với 15 năm kinh nghiệm.
@@ -170,6 +187,9 @@ Nhiệm vụ của bạn là chẩn đoán sự cố dựa trên mô tả của 
 DANH SÁCH DỊCH VỤ HIỆN CÓ CỦA CHÚNG TÔI:
 ${servicesContext}
 
+DANH SÁCH LOẠI THIẾT BỊ HIỆN CÓ:
+${deviceTypesContext}
+
 YÊU CẦU TRẢ VỀ JSON CÓ CẤU TRÚC SAU:
 1. Phân tích nguyên nhân lỗi (diagnosis_error / predicted_cause) chuyên nghiệp.
 2. Đề xuất hướng xử lý của thợ sửa chữa (diagnosis_solution / suggested_action).
@@ -177,7 +197,8 @@ YÊU CẦU TRẢ VỀ JSON CÓ CẤU TRÚC SAU:
 4. Lời khuyên an toàn khẩn cấp lập tức cho chủ nhà (safety_tips): Một danh sách gồm 2-3 lời khuyên ngắn gọn ví dụ: "Ngắt aptomat", "Khóa van nước tổng".
 5. Gợi ý 1-2 dịch vụ phù hợp trong hệ thống của chúng tôi (suggested_services).
 6. QUAN TRỌNG: Hãy chọn RA 1 DỊCH VỤ PHÙ HỢP NHẤT từ danh sách trên để xử lý lỗi này. Trả về đúng ID của dịch vụ đó vào trường "service_id". Nếu không có dịch vụ nào phù hợp, trả về null.
-7. BẢO MẬT & SPAM: Nếu nội dung của khách hàng là rác, trêu đùa, hoặc KHÔNG LIÊN QUAN ĐẾN CÁC SỰ CỐ NHÀ CỬA (điện, nước, gia dụng...), hãy đặt "is_spam": true. Ngược lại đặt "is_spam": false.
+7. ĐỒNG THỜI: Nếu khách hàng có nhắc đến loại thiết bị cụ thể (ví dụ: Tủ lạnh, Máy giặt, Điều hòa...), hãy chọn RA 1 LOẠI THIẾT BỊ PHÙ HỢP NHẤT từ danh sách Thiết bị và trả về ID vào trường "device_type_id". Nếu không rõ, trả về null.
+8. BẢO MẬT & SPAM: Nếu nội dung của khách hàng là rác, trêu đùa, hoặc KHÔNG LIÊN QUAN ĐẾN CÁC SỰ CỐ NHÀ CỬA (điện, nước, gia dụng...), hãy đặt "is_spam": true. Ngược lại đặt "is_spam": false.
 
 MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
 "${description}"`;
@@ -205,6 +226,7 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
           is_spam: { type: "BOOLEAN" },
           severity: { type: "STRING" },
           service_id: { type: "INTEGER" },
+          device_type_id: { type: "INTEGER" },
           suggested_services: { type: "ARRAY", items: { type: "STRING" } },
           diagnosis_error: { type: "STRING" },
           diagnosis_solution: { type: "STRING" },
@@ -232,6 +254,7 @@ MÔ TẢ SỰ CỐ CỦA KHÁCH HÀNG:
     return {
       severity: parsed.severity || 'MEDIUM',
       service_id: parsed.service_id || null,
+      device_type_id: parsed.device_type_id || null,
       suggested_services: parsed.suggested_services || [],
       diagnosis_error: parsed.diagnosis_error || 'Không thể xác định lỗi chi tiết.',
       diagnosis_solution: parsed.diagnosis_solution || 'Vui lòng chờ kỹ thuật viên đến kiểm tra.',

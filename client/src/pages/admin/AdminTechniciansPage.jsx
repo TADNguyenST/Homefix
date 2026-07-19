@@ -330,6 +330,7 @@ export default function AdminTechniciansPage() {
           <Input.Search 
             placeholder="Tìm theo tên, email, SĐT" 
             allowClear 
+            onChange={(e) => setSearch(e.target.value)}
             onSearch={(value) => setSearch(value)}
             style={{ width: 250 }}
           />
@@ -337,8 +338,9 @@ export default function AdminTechniciansPage() {
             placeholder="Lọc theo khu vực" 
             allowClear 
             style={{ width: 200 }}
-            onChange={(val) => setFilterDistrict(val)}
+            onChange={(val) => setFilterDistrict(val === 'all' ? null : val)}
           >
+            <Select.Option value="all">Tất cả khu vực</Select.Option>
             {districts.map(d => (
               <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>
             ))}
@@ -347,8 +349,9 @@ export default function AdminTechniciansPage() {
             placeholder="Lọc theo nhận việc" 
             allowClear 
             style={{ width: 180 }}
-            onChange={(val) => setFilterStatus(val)}
+            onChange={(val) => setFilterStatus(val === 'all' ? null : val)}
           >
+            <Select.Option value="all">Tất cả trạng thái</Select.Option>
             <Select.Option value={true}>Sẵn sàng nhận việc</Select.Option>
             <Select.Option value={false}>Đang bận / Tạm nghỉ</Select.Option>
           </Select>

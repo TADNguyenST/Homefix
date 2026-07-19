@@ -19,7 +19,12 @@ export default function AdminDeviceTypesPage() {
 
   const { data: deviceData, isLoading, refetch } = useQuery({
     queryKey: ['admin-device-types', search, filterCategory, isShowingTrash],
-    queryFn: () => adminApi.getDeviceTypes({ search, category_id: filterCategory, is_deleted: isShowingTrash }),
+    queryFn: () => adminApi.getDeviceTypes({
+      search,
+      category_id: filterCategory,
+      is_deleted: isShowingTrash,
+      limit: 100,
+    }),
   });
 
   const { data: catData } = useQuery({

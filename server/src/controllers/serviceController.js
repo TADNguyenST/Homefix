@@ -153,10 +153,80 @@ const getPopularServices = async (req, res) => {
   }
 };
 
+/**
+ * GET /:id/reviews
+ * Public: Lấy danh sách đánh giá của dịch vụ.
+ */
+const getServiceReviews = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { skip, take, page, limit } = getPagination(req.query);
+
+    const where = {
+      booking: {
+        service_id: parseInt(id),
+      },
+    };
+
+    const [total, reviews, stats] = await Promise.all([
+      prisma.review.count({ where }),
+      prisma.review.findMany({
+        where,
+        include: {
+          customer: { select: { full_name: true, avatar_url: true } },
+          technicianProfile: {
+            include: { user: { select: { full_name: true } } }
+          }
+        },
+        orderBy: { created_at: 'desc' },
+        skip,
+        take,
+      }),
+      prisma.review.aggregate({
+        where,
+        _avg: { rating: true },
+      })
+    ]);
+
+    const averageRating = stats._avg.rating ? parseFloat(stats._avg.rating.toFixed(1)) : 0;
+
+    const formattedReviews = reviews.map(r => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.comment,
+      created_at: r.created_at,
+      customer_name: r.customer?.full_name || 'Khách hàng',
+      customer_avatar: r.customer?.avatar_url,
+      technician_name: r.technicianProfile?.user?.full_name || 'Kỹ thuật viên',
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        reviews: formattedReviews,
+        stats: {
+          average_rating: averageRating,
+          total_reviews: total,
+        }
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (err) {
+    console.error('Get service reviews error:', err);
+    return error(res, 'Đã xảy ra lỗi khi lấy danh giá', 500);
+  }
+};
+
 module.exports = {
   getCategories,
   getServices,
   getServiceById,
   getDeviceTypes,
   getPopularServices,
+  getServiceReviews,
 };

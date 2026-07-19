@@ -30,7 +30,8 @@ export default function AdminServicesPage() {
       search,
       category_id: filterCategory,
       is_active: filterStatus,
-      is_deleted: isShowingTrash
+      is_deleted: isShowingTrash,
+      limit: 100,
     }),
   });
 
@@ -255,8 +256,9 @@ export default function AdminServicesPage() {
             placeholder="Lọc theo danh mục"
             allowClear
             style={{ width: 200 }}
-            onChange={(val) => setFilterCategory(val)}
+            onChange={(val) => setFilterCategory(val === 'all' ? null : val)}
           >
+            <Select.Option value="all">Tất cả danh mục</Select.Option>
             {categories.map(c => (
               <Select.Option key={c.id} value={c.id}>{c.name}</Select.Option>
             ))}
@@ -265,8 +267,9 @@ export default function AdminServicesPage() {
             placeholder="Lọc theo trạng thái"
             allowClear
             style={{ width: 180 }}
-            onChange={(val) => setFilterStatus(val)}
+            onChange={(val) => setFilterStatus(val === 'all' ? null : val)}
           >
+            <Select.Option value="all">Tất cả trạng thái</Select.Option>
             <Select.Option value={true}>Hoạt động (Bật)</Select.Option>
             <Select.Option value={false}>Ngừng (Tắt)</Select.Option>
           </Select>
