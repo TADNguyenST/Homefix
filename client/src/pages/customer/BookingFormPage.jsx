@@ -81,6 +81,16 @@ export default function BookingFormPage() {
       return;
     }
 
+    // Tiền kiểm tra nội dung để tránh gọi AI lãng phí token cho các câu không liên quan
+    const keywords = ['máy', 'lạnh', 'điều hòa', 'giặt', 'sấy', 'tủ', 'bếp', 'hút', 'điện', 'nước', 'quạt', 'cháy', 'chập', 'hư', 'hỏng', 'lỗi', 'không chạy', 'không lên', 'kêu', 'rò', 'nghẹt', 'tắc', 'vòi', 'bồn', 'toilet', 'ống', 'cắm', 'công tắc', 'cầu dao', 'aptomat', 'bơm', 'van', 'lavabo', 'chảy', 'xì', 'xả', 'đèn', 'sửa', 'thay', 'lắp', 'kiểm', 'khét', 'nóng', 'bật', 'tắt', 'mùi', 'kẹt', 'vỡ', 'gãy', 'nổ'];
+    const descLower = description.toLowerCase();
+    const hasKeyword = keywords.some(kw => descLower.includes(kw));
+
+    if (!hasKeyword) {
+      message.error('Nội dung không hợp lệ! Vui lòng mô tả đúng sự cố liên quan đến điện nước, điện lạnh, gia dụng...');
+      return;
+    }
+
     try {
       setIsDiagnosing(true);
       
@@ -98,6 +108,12 @@ export default function BookingFormPage() {
       // Auto-select service dựa trên ID do AI trả về
       if (diagnosis.service_id) {
         form.setFieldsValue({ service_id: diagnosis.service_id });
+        
+        // Auto-select device type nếu AI nhận diện được
+        if (diagnosis.device_type_id) {
+          form.setFieldsValue({ device_type_id: diagnosis.device_type_id });
+        }
+
         const match = services.find(s => s.id === diagnosis.service_id);
         if (match) {
           message.success(`Hệ thống chẩn đoán xong và tự động chọn dịch vụ: ${match.name}`);
@@ -381,11 +397,14 @@ export default function BookingFormPage() {
             name="device_type_id"
             label="Loại thiết bị"
             rules={[{ required: false }]}
+            extra={selectedService ? "Gõ từ khóa để tìm kiếm nhanh nếu có quá nhiều thiết bị trong danh sách." : null}
           >
             <Select
               size="large"
               placeholder={selectedService ? 'Chọn loại thiết bị nếu muốn mô tả rõ hơn' : 'Chọn dịch vụ trước để lọc loại thiết bị'}
               allowClear
+              showSearch
+              optionFilterProp="children"
               disabled={!selectedService}
             >
               {filteredDeviceTypes.map(d => (

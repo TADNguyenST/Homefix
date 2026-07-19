@@ -73,8 +73,11 @@ export default function RegisterPage() {
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 64px - 200px)', padding: 24 }}>
       <Card className="glass-card" style={{ width: '100%', maxWidth: 500 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <img src="/logo.png" alt="HomeFix Logo" style={{ height: 48, objectFit: 'contain' }} />
+          </div>
           <Title level={3} style={{ color: 'var(--navy)', margin: 0 }}>Tạo tài khoản</Title>
-          <Text type="secondary">Tham gia HomeFix ngay hôm nay</Text>
+          <Text type="secondary">Tham gia hệ thống ngay hôm nay</Text>
         </div>
 
         <Form

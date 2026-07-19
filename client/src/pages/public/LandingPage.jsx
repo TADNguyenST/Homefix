@@ -57,6 +57,16 @@ export default function LandingPage() {
       return;
     }
 
+    // Tiền kiểm tra nội dung rác/không liên quan
+    const keywords = ['máy', 'lạnh', 'điều hòa', 'giặt', 'sấy', 'tủ', 'bếp', 'hút', 'điện', 'nước', 'quạt', 'cháy', 'chập', 'hư', 'hỏng', 'lỗi', 'không chạy', 'không lên', 'kêu', 'rò', 'nghẹt', 'tắc', 'vòi', 'bồn', 'toilet', 'ống', 'cắm', 'công tắc', 'cầu dao', 'aptomat', 'bơm', 'van', 'lavabo', 'chảy', 'xì', 'xả', 'đèn', 'sửa', 'thay', 'lắp', 'kiểm', 'khét', 'nóng', 'bật', 'tắt', 'mùi', 'kẹt', 'vỡ', 'gãy', 'nổ'];
+    const descLower = promptText.toLowerCase();
+    const hasKeyword = keywords.some(kw => descLower.includes(kw));
+
+    if (!hasKeyword) {
+      setErrorMessage('Nội dung không hợp lệ! Vui lòng mô tả đúng sự cố liên quan đến điện nước, điện lạnh, gia dụng...');
+      return;
+    }
+
     try {
       setIsDiagnosing(true);
       setAiResult(null);
@@ -404,12 +414,12 @@ export default function LandingPage() {
                 className="service-card hover-card fade-in-up"
                 style={{ height: '100%', borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: 'none', boxShadow: 'var(--shadow-md)', animationDelay: `${idx * 0.1}s` }}
                 cover={
-                  <div style={{ height: 200, overflow: 'hidden', position: 'relative' }}>
+                  <div style={{ height: 200, overflow: 'hidden', position: 'relative', background: '#f8fafc' }}>
                     <img 
                       alt={service.title} 
                       src={service.img} 
                       className="service-img"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease' }} 
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', transition: 'transform 0.4s ease' }} 
                     />
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, background: 'linear-gradient(transparent, rgba(0,0,0,0.5))' }} />
                     <div style={{ position: 'absolute', top: 12, left: 12, background: 'var(--orange)', color: '#fff', padding: '4px 12px', borderRadius: 'var(--radius-full)', fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>
@@ -421,7 +431,7 @@ export default function LandingPage() {
                 onClick={() => navigate(`/services/${service.id}`)}
               >
                 <Title level={4} style={{ marginBottom: 8, color: 'var(--navy)', fontWeight: 600, fontSize: 17 }}>{service.title}</Title>
-                <Text type="secondary" style={{ flex: 1, marginBottom: 20, fontSize: 13, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{service.desc}</Text>
+                <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ flex: 1, marginBottom: 20, fontSize: 13, lineHeight: 1.5 }}>{service.desc}</Typography.Paragraph>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Giá từ</div>

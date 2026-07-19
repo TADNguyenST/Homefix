@@ -42,8 +42,11 @@ export default function LoginPage() {
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 64px - 200px)', padding: 24 }}>
       <Card className="glass-card" style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <img src="/logo.png" alt="HomeFix Logo" style={{ height: 48, objectFit: 'contain' }} />
+          </div>
           <Title level={3} style={{ color: 'var(--navy)', margin: 0 }}>Chào mừng trở lại</Title>
-          <Text type="secondary">Đăng nhập vào HomeFix</Text>
+          <Text type="secondary">Đăng nhập vào hệ thống</Text>
         </div>
 
         <Form

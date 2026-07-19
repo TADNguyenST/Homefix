@@ -128,17 +128,15 @@ export default function AdminLayout() {
   return (
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Sider 
-        theme="dark" 
+        theme="light" 
         width={260} 
         breakpoint="lg"
         collapsedWidth="0"
         style={{ overflowY: 'auto', height: '100vh' }}
         className="hide-scrollbar"
       >
-        <div className="sidebar-header">
-          <div className="logo-text">
-            HomeFix Admin
-          </div>
+        <div className="sidebar-header" style={{ background: '#fff', height: '64px', display: 'flex', justifyContent: 'center', padding: '0 16px', borderBottom: '1px solid #f0f0f0' }}>
+          <img src="/logo.png" alt="HomeFix Admin" style={{ height: 42, objectFit: 'contain' }} />
         </div>
         <div className="sidebar-user">
           <Avatar style={{ backgroundColor: 'var(--orange)' }}>
@@ -150,7 +148,7 @@ export default function AdminLayout() {
           </div>
         </div>
         <Menu 
-          theme="dark"
+          theme="light"
           mode="inline" 
           selectedKeys={[activeKey]}
           defaultOpenKeys={['users_group', 'catalog_group']}
