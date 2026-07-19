@@ -75,7 +75,7 @@ const getMyComplaints = async (req, res) => {
     const complaints = await prisma.complaint.findMany({
       where: { customer_id: req.user.id },
       include: {
-        booking: { select: { id: true, service: { select: { name: true } } } },
+        booking: { select: { id: true, status: true, booking_date: true, service: { select: { name: true } } } },
       },
       orderBy: { created_at: 'desc' },
     });

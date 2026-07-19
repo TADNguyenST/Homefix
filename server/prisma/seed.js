@@ -110,11 +110,13 @@ async function main() {
   ];
 
   const districts = [];
+  const wards = [];
   for (const d of districtsData) {
     const district = await prisma.district.create({ data: { name: d.name, type: d.type } });
     districts.push(district);
     for (const [name, type] of d.wards) {
-      await prisma.ward.create({ data: { district_id: district.id, name, type } });
+      const ward = await prisma.ward.create({ data: { district_id: district.id, name, type } });
+      wards.push(ward);
     }
   }
 
@@ -204,13 +206,15 @@ async function main() {
     { name: 'Lavabo', category: 'Cấp thoát nước' },
     { name: 'Bồn cầu', category: 'Cấp thoát nước' },
   ];
+  const deviceTypes = [];
   for (const dt of deviceTypesData) {
-    await prisma.deviceType.create({ 
-      data: { 
+    const deviceType = await prisma.deviceType.create({
+      data: {
         name: dt.name,
-        category_id: allCategories[dt.category]?.id || null
-      } 
+        category_id: allCategories[dt.category]?.id || null,
+      },
     });
+    deviceTypes.push(deviceType);
   }
 
   // 6. Seed Technician Profiles, Skills, Schedules
@@ -272,6 +276,243 @@ async function main() {
       },
     });
   }
+
+  const voucherGiam50k = await prisma.voucher.findUnique({ where: { code: 'GIAM50K' } });
+
+  // 8. Seed Customer Addresses
+  const customerAddresses = [];
+  for (let i = 0; i < customers.length; i++) {
+    customerAddresses.push(
+      await prisma.customerAddress.create({
+        data: {
+          customer_id: customers[i].id,
+          district_id: districts[i % districts.length].id,
+          ward_id: wards[i * 2]?.id || wards[0].id,
+          address_detail: `Số ${10 + i}, đường Nguyễn Văn ${i + 1}`,
+          label: 'Nhà',
+          is_default: true,
+        },
+      })
+    );
+  }
+
+  // 9. Seed Bookings + Payments + Status History
+  const bookingsData = [
+    {
+      customer: customers[0],
+      technicianProfile: null,
+      service: allServices[0],
+      deviceType: deviceTypes[0],
+      address: customerAddresses[0],
+      district: districts[0],
+      ward: wards[0],
+      description: 'Máy lạnh treo tường không lạnh và nước chảy ra.',
+      booking_date: new Date(new Date().setDate(new Date().getDate() + 2)),
+      time_slot_start: '09:00',
+      time_slot_end: '11:00',
+      status: 'PENDING',
+      estimated_price: Number(allServices[0].base_price),
+      final_price: null,
+      payment_method: 'VNPAY',
+      voucher: voucherGiam50k,
+      discount_amount: voucherGiam50k ? Number(voucherGiam50k.discount_value) : 0,
+      payment: { amount: Number(allServices[0].base_price) - (voucherGiam50k ? Number(voucherGiam50k.discount_value) : 0), method: 'VNPAY', status: 'UNPAID' },
+      histories: [{ from_status: null, to_status: 'PENDING', changed_by: customers[0].id, note: 'Khách hàng đặt lịch' }],
+    },
+    {
+      customer: customers[1],
+      technicianProfile: technicians[1] ? await prisma.technicianProfile.findUnique({ where: { user_id: technicians[1].id } }) : null,
+      service: allServices[4],
+      deviceType: deviceTypes[2],
+      address: customerAddresses[1],
+      district: districts[1],
+      ward: wards[4],
+      description: 'Máy giặt không xả nước và kêu to.',
+      booking_date: new Date(new Date().setDate(new Date().getDate() + 1)),
+      time_slot_start: '10:00',
+      time_slot_end: '12:00',
+      status: 'ASSIGNED',
+      estimated_price: Number(allServices[4].base_price),
+      final_price: null,
+      payment_method: 'CASH',
+      payment: { amount: Number(allServices[4].base_price), method: 'CASH', status: 'UNPAID' },
+      histories: [{ from_status: null, to_status: 'ASSIGNED', changed_by: customers[1].id, note: 'Đơn đã được gán thợ' }],
+    },
+    {
+      customer: customers[2],
+      technicianProfile: technicians[2] ? await prisma.technicianProfile.findUnique({ where: { user_id: technicians[2].id } }) : null,
+      service: allServices[8],
+      deviceType: deviceTypes[5],
+      address: customerAddresses[2],
+      district: districts[2],
+      ward: wards[8],
+      description: 'Tủ lạnh chạy nhưng không lạnh, có tiếng ồn lớn.',
+      booking_date: new Date(new Date().setDate(new Date().getDate() - 1)),
+      time_slot_start: '14:00',
+      time_slot_end: '16:00',
+      status: 'COMPLETED',
+      estimated_price: Number(allServices[8].base_price),
+      final_price: Number(allServices[8].base_price),
+      payment_method: 'VNPAY',
+      payment: {
+        amount: Number(allServices[8].base_price),
+        method: 'VNPAY',
+        status: 'PAID',
+        transaction_code: 'TXN123456',
+        vnpay_txn_ref: 'VNPAYREF123',
+        vnpay_response_code: '00',
+        paid_at: new Date(new Date().setDate(new Date().getDate() - 1)),
+      },
+      histories: [
+        { from_status: null, to_status: 'COMPLETED', changed_by: customers[2].id, note: 'Đơn đã hoàn thành' },
+      ],
+    },
+  ];
+
+  const bookings = [];
+  for (const data of bookingsData) {
+    const booking = await prisma.booking.create({
+      data: {
+        customer_id: data.customer.id,
+        technician_profile_id: data.technicianProfile?.id || null,
+        service_id: data.service.id,
+        device_type_id: data.deviceType?.id || null,
+        description: data.description,
+        customer_address_id: data.address.id,
+        district_id: data.district.id,
+        ward_id: data.ward.id,
+        address_detail: data.address.address_detail,
+        booking_date: data.booking_date,
+        time_slot_start: data.time_slot_start,
+        time_slot_end: data.time_slot_end,
+        status: data.status,
+        estimated_price: data.estimated_price,
+        final_price: data.final_price,
+        payment_method: data.payment_method,
+        voucher_id: data.voucher?.id || null,
+        discount_amount: data.discount_amount || 0,
+        payment: { create: data.payment },
+        statusHistories: { create: data.histories.map((history) => ({ ...history, created_at: new Date() })) },
+      },
+      include: { payment: true },
+    });
+    bookings.push(booking);
+  }
+
+  // 10. Seed Quotations
+  await prisma.quotation.create({
+    data: {
+      booking_id: bookings[1].id,
+      total_extra_price: 320000,
+      note: 'Báo giá sửa máy giặt không xả nước.',
+      status: 'PENDING',
+      created_by: technicians[1].id,
+      items: {
+        create: [
+          { item_name: 'Thay bơm xả', quantity: 1, unit_price: 250000 },
+          { item_name: 'Phí công', quantity: 1, unit_price: 70000 },
+        ],
+      },
+    },
+  });
+
+  await prisma.quotation.create({
+    data: {
+      booking_id: bookings[2].id,
+      total_extra_price: 380000,
+      note: 'Báo giá sửa tủ lạnh không lạnh.',
+      status: 'ACCEPTED',
+      created_by: technicians[2].id,
+      responded_by: customers[2].id,
+      responded_at: new Date(new Date().setDate(new Date().getDate() - 2)),
+      items: {
+        create: [
+          { item_name: 'Thay block', quantity: 1, unit_price: 280000 },
+          { item_name: 'Phí công', quantity: 1, unit_price: 100000 },
+        ],
+      },
+    },
+  });
+
+  // 11. Seed Reviews
+  await prisma.review.create({
+    data: {
+      booking_id: bookings[2].id,
+      customer_id: customers[2].id,
+      technician_profile_id: technicians[2] ? await prisma.technicianProfile.findUnique({ where: { user_id: technicians[2].id } }).then((x) => x.id) : null,
+      rating: 5,
+      comment: 'Thợ làm nhanh, nhiệt tình, dịch vụ rất tốt.',
+    },
+  });
+
+  // 12. Seed Complaints
+  await prisma.complaint.create({
+    data: {
+      booking_id: bookings[1].id,
+      customer_id: customers[1].id,
+      subject: 'Booking chưa có kỹ thuật viên xác nhận',
+      description: 'Tôi đã đặt lịch nhưng chưa thấy kỹ thuật viên xác nhận lại.',
+      status: 'OPEN',
+      admin_response: null,
+      ai_sentiment: 'NEUTRAL',
+    },
+  });
+
+  // 13. Seed Notifications
+  await prisma.notification.createMany({
+    data: [
+      { user_id: admin.id, title: 'Có đơn hàng mới', message: 'Khách hàng vừa tạo đơn mới.', type: 'BOOKING' },
+      { user_id: customers[0].id, title: 'Đơn hàng đã được tạo', message: 'Bạn đã tạo đơn mới thành công.', type: 'BOOKING' },
+      { user_id: technicians[1].id, title: 'Bạn được gán đơn', message: 'Bạn vừa được gán đơn sửa máy giặt.', type: 'BOOKING' },
+      { user_id: customers[2].id, title: 'Thanh toán thành công', message: 'Bạn đã thanh toán đơn hàng thành công.', type: 'PAYMENT' },
+      { user_id: customers[1].id, title: 'Đơn đang chờ báo giá', message: 'Kỹ thuật viên đã báo giá cho đơn của bạn.', type: 'QUOTATION' },
+    ],
+  });
+
+  // 14. Seed Booking Images
+  await prisma.bookingImage.createMany({
+    data: [
+      { booking_id: bookings[0].id, image_url: 'https://example.com/images/booking-1.jpg', uploaded_by: 'CUSTOMER' },
+      { booking_id: bookings[2].id, image_url: 'https://example.com/images/booking-3.jpg', uploaded_by: 'TECHNICIAN' },
+    ],
+  });
+
+  // 15. Seed Voucher Usage
+  if (voucherGiam50k) {
+    await prisma.voucherUsage.create({
+      data: {
+        voucher_id: voucherGiam50k.id,
+        user_id: customers[0].id,
+        booking_id: bookings[0].id,
+      },
+    });
+
+    await prisma.voucher.update({
+      where: { id: voucherGiam50k.id },
+      data: { used_count: { increment: 1 } },
+    });
+  }
+
+  // 16. Seed Password Reset Token
+  await prisma.passwordResetToken.create({
+    data: {
+      user_id: customers[0].id,
+      otp_code: '123456',
+      expires_at: new Date(Date.now() + 15 * 60 * 1000),
+    },
+  });
+
+  // 17. Seed AI analysis sample
+  await prisma.aiAnalysis.create({
+    data: {
+      booking_id: bookings[1].id,
+      input_text: 'Máy giặt không xả nước, lồng máy vẫn quay.',
+      suggested_services: { reasons: ['Kiểm tra bơm xả', 'Vệ sinh bộ lọc', 'Thay van xả'] },
+      severity: 'MEDIUM',
+      tech_summary: 'Có khả năng bơm xả hoặc đường ống thoát bị tắc.',
+      raw_response: { analysis: 'pump_or_drainage_issue' },
+    },
+  });
 
   console.log('Seeding finished.');
 }
