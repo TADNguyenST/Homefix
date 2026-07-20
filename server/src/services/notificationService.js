@@ -174,6 +174,56 @@ const notifyBookingRescheduled = async (techUserId, bookingId) => {
   );
 };
 
+const notifyBookingCancelled = async (techUserId, bookingId, customerName) => {
+  await createNotification(
+    techUserId,
+    'Đơn hàng đã bị hủy',
+    `Đơn hàng #${bookingId} của khách hàng ${customerName} đã bị hủy.`,
+    NOTIFICATION_TYPE.BOOKING,
+    bookingId
+  );
+};
+
+const notifyBookingCancelledToAdmins = async (adminIds, bookingId, customerName) => {
+  await createBulkNotifications(
+    adminIds,
+    'Đơn hàng bị hủy',
+    `Khách hàng ${customerName} đã hủy đơn sửa chữa #${bookingId}.`,
+    NOTIFICATION_TYPE.BOOKING,
+    bookingId
+  );
+};
+
+const notifyJobAcceptedByTech = async (customerId, bookingId, techName) => {
+  await createNotification(
+    customerId,
+    'Kỹ thuật viên đã nhận lịch',
+    `Kỹ thuật viên ${techName} đã xác nhận và đang bắt đầu thực hiện sửa chữa đơn hàng #${bookingId}.`,
+    NOTIFICATION_TYPE.BOOKING,
+    bookingId
+  );
+};
+
+const notifyJobRejectedByTech = async (adminIds, bookingId, techName, reason) => {
+  await createBulkNotifications(
+    adminIds,
+    'Thợ từ chối đơn hàng',
+    `Kỹ thuật viên ${techName} đã từ chối đơn hàng #${bookingId}. Lý do: ${reason || 'Không rõ'}. Vui lòng phân công thợ khác.`,
+    NOTIFICATION_TYPE.BOOKING,
+    bookingId
+  );
+};
+
+const notifyJobInspecting = async (customerId, bookingId, techName) => {
+  await createNotification(
+    customerId,
+    'Kỹ thuật viên đang khảo sát',
+    `Kỹ thuật viên ${techName} đang tiến hành kiểm tra và khảo sát sự cố cho đơn hàng #${bookingId}.`,
+    NOTIFICATION_TYPE.BOOKING,
+    bookingId
+  );
+};
+
 module.exports = {
   createNotification,
   createBulkNotifications,
@@ -188,4 +238,9 @@ module.exports = {
   notifyNewComplaint,
   notifyComplaintResolved,
   notifyBookingRescheduled,
+  notifyBookingCancelled,
+  notifyBookingCancelledToAdmins,
+  notifyJobAcceptedByTech,
+  notifyJobRejectedByTech,
+  notifyJobInspecting,
 };

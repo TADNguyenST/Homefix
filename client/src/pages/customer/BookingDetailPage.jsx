@@ -69,6 +69,11 @@ export default function BookingDetailPage() {
     }));
   const canReschedule = ['PENDING', 'CONFIRMED', 'ASSIGNED'].includes(booking.status);
   
+  const customerImages = booking.images?.filter(img => img.uploaded_by === 'CUSTOMER') || [];
+  const technicianImages = booking.images?.filter(img => img.uploaded_by === 'TECHNICIAN') || [];
+  const completionHistory = booking.statusHistories?.find(h => h.to_status === 'AWAITING_PAYMENT');
+  const completionNoteText = completionHistory?.note;
+  
   const handleCancel = () => {
     Modal.confirm({
       title: 'Hủy đơn đặt lịch?',
@@ -458,20 +463,50 @@ export default function BookingDetailPage() {
               : `Kỹ thuật viên đã xác nhận thu đủ ${formatVND(booking.payment.amount)} tiền mặt${booking.payment.transaction_code ? `, mã biên nhận ${booking.payment.transaction_code}` : ''}.`}
           />
         )}
-          {booking.images?.length > 0 && (
-            <Card title="Hinh anh su co" className="glass-card">
+          {customerImages.length > 0 && (
+            <Card title="Hình ảnh sự cố (Khách hàng cung cấp)" className="glass-card">
               <Image.PreviewGroup>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
-                  {booking.images.map(image => (
+                  {customerImages.map(image => (
                     <Image
                       key={image.id}
                       src={resolveImageUrl(image.image_url)}
-                      alt="Booking evidence"
+                      alt="Incident evidence"
                       style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8 }}
                     />
                   ))}
                 </div>
               </Image.PreviewGroup>
+            </Card>
+          )}
+
+          {(technicianImages.length > 0 || completionNoteText) && (
+            <Card title="Biên bản nghiệm thu & Ảnh sau sửa" className="glass-card" styles={{ body: { padding: 24 } }} style={{ border: '1px solid var(--success-border)', background: '#f8fafc' }}>
+              {completionNoteText && (
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong style={{ display: 'block', marginBottom: 6, color: 'var(--navy)' }}>Ghi chú bàn giao từ Kỹ thuật viên:</Text>
+                  <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', fontStyle: 'italic', color: 'var(--text-primary)' }}>
+                    "{completionNoteText}"
+                  </div>
+                </div>
+              )}
+              {technicianImages.length > 0 && (
+                <div>
+                  <Text strong style={{ display: 'block', marginBottom: 8, color: 'var(--navy)' }}>Hình ảnh nghiệm thu thực tế:</Text>
+                  <Image.PreviewGroup>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                      {technicianImages.map(image => (
+                        <Image
+                          key={image.id}
+                          src={resolveImageUrl(image.image_url)}
+                          alt="Repair completion evidence"
+                          style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8 }}
+                        />
+                      ))}
+                    </div>
+                  </Image.PreviewGroup>
+                </div>
+              )}
             </Card>
           )}
 

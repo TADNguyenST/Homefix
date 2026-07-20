@@ -3,13 +3,15 @@ import { Card, List, Typography, Spin, Button, Tag, Space, message, Badge } from
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationApi } from '../../api/bookingApi';
-import { formatDateTime, timeAgo } from '../../utils/helpers';
+import { formatDateTime, timeAgo, getNotificationRedirectUrl } from '../../utils/helpers';
 import { useAuth } from '../../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 
 export default function NotificationPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const { data: notifData, isLoading } = useQuery({
@@ -17,8 +19,8 @@ export default function NotificationPage() {
     queryFn: () => notificationApi.getAll({ limit: 50 }),
   });
 
-  const notifications = notifData?.data?.data || [];
-  const unreadCount = notifData?.data?.unread_count || 0;
+  const notifications = notifData?.data || [];
+  const unreadCount = notifData?.unread_count || 0;
 
   const markAsReadMutation = useMutation({
     mutationFn: (id) => notificationApi.read(id),
@@ -39,7 +41,10 @@ export default function NotificationPage() {
     if (!item.is_read) {
       markAsReadMutation.mutate(item.id);
     }
-    // Optionally redirect based on item.reference_id / type
+    const redirectUrl = getNotificationRedirectUrl(item, user?.role);
+    if (redirectUrl) {
+      navigate(redirectUrl);
+    }
   };
 
   return (
