@@ -1,29 +1,35 @@
 import { useState } from 'react';
 import { Button, Row, Col, Card, Typography, Space, Avatar, Input, Spin, Alert, List, Tag, message } from 'antd';
-import { 
-  ArrowRightOutlined, 
-  ToolOutlined, 
-  SafetyCertificateOutlined, 
-  DollarCircleOutlined, 
-  CheckCircleFilled, 
+import {
+  ArrowRightOutlined,
+  ToolOutlined,
+  SafetyCertificateOutlined,
+  DollarCircleOutlined,
+  CheckCircleFilled,
   StarFilled,
   RobotOutlined,
   InfoCircleOutlined,
   SafetyOutlined,
-  CompassOutlined
+  CompassOutlined,
+  FileTextOutlined,
+  UserOutlined,
+  ClockCircleOutlined
 } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { aiApi } from '../../api/aiApi';
 import { serviceApi } from '../../api/serviceApi';
-import { formatVND } from '../../utils/helpers';
+import { blogApi } from '../../api/blogApi';
+import { formatVND, getInitials, stripHtmlAndTruncate } from '../../utils/helpers';
+import dayjs from 'dayjs';
+import ImageGrid from '../../components/ImageGrid';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  
+
   // State for AI Diagnosis on Landing Page
   const [problemText, setProblemText] = useState('');
   const [isDiagnosing, setIsDiagnosing] = useState(false);
@@ -31,8 +37,18 @@ export default function LandingPage() {
   const [errorMessage, setErrorMessage] = useState('');
 
   // Fetch services to matching recommended IDs
-  const { data: servicesData } = useQuery({ queryKey: ['services'], queryFn: () => serviceApi.getAll() });
-  const services = servicesData?.data?.data || servicesData?.data || [];
+  const { data: servicesData, isLoading: loadingServices } = useQuery({
+    queryKey: ['public-services'],
+    queryFn: () => serviceApi.getPublicServices()
+  });
+
+  const { data: blogsData } = useQuery({
+    queryKey: ['public-blogs', { limit: 3 }],
+    queryFn: () => blogApi.getPublicBlogs({ limit: 3 }),
+  });
+
+  const services = servicesData?.data || [];
+  const blogs = blogsData?.data || [];
 
   // Fetch popular services
   const { data: popularData } = useQuery({ queryKey: ['popular-services'], queryFn: () => serviceApi.getPopular() });
@@ -117,10 +133,10 @@ export default function LandingPage() {
     'https://images.unsplash.com/photo-1563223771-5fe4038fbfc9?auto=format&fit=crop&q=80&w=600',
     'https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&q=80&w=600',
   ];
-  const categoryIcons = { 
-    'Điện lạnh': '❄️', 
-    'Điện': '⚡', 
-    'Nước': '💧', 
+  const categoryIcons = {
+    'Điện lạnh': '❄️',
+    'Điện': '⚡',
+    'Nước': '💧',
     'Thiết bị giặt sấy': '🧺',
     'Thiết bị bếp': '🍳',
     'Điện gia dụng': '🔌',
@@ -166,10 +182,10 @@ export default function LandingPage() {
                 Đặt lịch thợ tay nghề cao túc trực ở Cần Thơ chỉ trong 3 phút. Tích hợp cổng chẩn đoán sự cố tự động đề xuất phương án và ước tính chi phí.
               </Paragraph>
               <Space size="large" wrap>
-                <Button 
-                  type="primary" 
-                  size="large" 
-                  icon={<ArrowRightOutlined />} 
+                <Button
+                  type="primary"
+                  size="large"
+                  icon={<ArrowRightOutlined />}
                   onClick={() => navigate('/customer/booking')}
                   style={{ height: 56, padding: '0 32px', fontSize: 18, borderRadius: 'var(--radius-md)', background: 'var(--orange)', borderColor: 'var(--orange)' }}
                 >
@@ -183,16 +199,16 @@ export default function LandingPage() {
                 </div>
               </Space>
             </Col>
-            
+
             <Col xs={24} lg={12} className="fade-in-up" style={{ animationDelay: '0.2s' }}>
               <div style={{ position: 'relative' }}>
-                <img 
-                  src="https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?auto=format&fit=crop&q=80&w=1000" 
-                  alt="Thợ sửa chữa chuyên nghiệp" 
-                  style={{ width: '100%', borderRadius: 'var(--radius-xl)', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', objectFit: 'cover', height: 440 }} 
+                <img
+                  src="https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?auto=format&fit=crop&q=80&w=1000"
+                  alt="Thợ sửa chữa chuyên nghiệp"
+                  style={{ width: '100%', borderRadius: 'var(--radius-xl)', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', objectFit: 'cover', height: 440 }}
                 />
-                <Card 
-                  className="glass-card" 
+                <Card
+                  className="glass-card"
                   style={{ position: 'absolute', bottom: -30, left: -20, width: 240, animation: 'pulse-glow 2s infinite' }}
                   styles={{ body: { padding: '16px' } }}
                 >
@@ -238,9 +254,9 @@ export default function LandingPage() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
                 <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>Sự cố phổ biến:</Text>
                 {sampleProblems.map((prob, idx) => (
-                  <Button 
-                    key={idx} 
-                    size="small" 
+                  <Button
+                    key={idx}
+                    size="small"
                     type="dashed"
                     onClick={() => handleApplyPreset(prob)}
                     style={{ fontSize: 12, borderRadius: 6 }}
@@ -309,7 +325,7 @@ export default function LandingPage() {
                     {/* Cột Phải: Safety & Đề xuất */}
                     <Col xs={24} md={11}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 20, height: '100%', borderLeft: '1px solid #334155', paddingLeft: 24, marginLeft: -12 }} className="md-border-left">
-                        
+
                         {/* Cảnh báo an toàn */}
                         {Array.isArray(aiResult.safety_tips) && aiResult.safety_tips.length > 0 && (
                           <div>
@@ -378,9 +394,9 @@ export default function LandingPage() {
         <Row gutter={[24, 24]}>
           {features.map((feature, idx) => (
             <Col xs={24} md={8} key={idx}>
-              <Card 
-                className="hover-card fade-in-up" 
-                style={{ height: '100%', textAlign: 'center', borderRadius: 'var(--radius-xl)', border: 'none', background: '#fff', boxShadow: 'var(--shadow-sm)' }} 
+              <Card
+                className="hover-card fade-in-up"
+                style={{ height: '100%', textAlign: 'center', borderRadius: 'var(--radius-xl)', border: 'none', background: '#fff', boxShadow: 'var(--shadow-sm)' }}
                 styles={{ body: { padding: 40 } }}
               >
                 <div style={{ width: 80, height: 80, borderRadius: '24px', background: 'rgba(249, 115, 22, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', transform: 'rotate(-5deg)' }}>
@@ -405,19 +421,19 @@ export default function LandingPage() {
             Xem tất cả <ArrowRightOutlined />
           </Link>
         </div>
-        
+
         <Row gutter={[24, 24]}>
           {popularServices.map((service, idx) => (
             <Col xs={24} sm={12} lg={6} key={service.id || idx}>
-              <Card 
-                hoverable 
+              <Card
+                hoverable
                 className="service-card hover-card fade-in-up"
                 style={{ height: '100%', borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: 'none', boxShadow: 'var(--shadow-md)', animationDelay: `${idx * 0.1}s` }}
                 cover={
                   <div style={{ height: 200, overflow: 'hidden', position: 'relative', background: '#f8fafc' }}>
-                    <img 
-                      alt={service.title} 
-                      src={service.img} 
+                    <img
+                      alt={service.title}
+                      src={service.img}
                       className="service-img"
                       style={{ width: '100%', height: '100%', objectFit: 'contain', transition: 'transform 0.4s ease' }}
                     />
@@ -431,7 +447,7 @@ export default function LandingPage() {
                 onClick={() => navigate(`/services/${service.id}`)}
               >
                 <Title level={4} style={{ marginBottom: 8, color: 'var(--navy)', fontWeight: 600, fontSize: 17 }}>{service.title}</Title>
-                <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ flex: 1, marginBottom: 20, fontSize: 13, lineHeight: 1.5 }}>{service.desc}</Typography.Paragraph>
+                <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ flex: 1, marginBottom: 20, fontSize: 13, lineHeight: 1.5, wordWrap: 'break-word', wordBreak: 'break-word' }}>{service.desc}</Typography.Paragraph>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Giá từ</div>
@@ -439,6 +455,69 @@ export default function LandingPage() {
                   </div>
                   <Button type="primary" shape="circle" icon={<ArrowRightOutlined />} style={{ boxShadow: '0 4px 12px rgba(249,115,22,0.3)' }} />
                 </div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </section>
+
+      {/* Blogs Section */}
+      <section className="page-container" style={{ padding: '80px 20px 100px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 40 }}>
+          <div>
+            <Text style={{ color: 'var(--orange)', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13 }}><FileTextOutlined /> Tin tức & Kinh nghiệm</Text>
+            <Title level={2} style={{ color: 'var(--navy)', marginTop: 8, marginBottom: 0, fontWeight: 700 }}>Chia sẻ từ chuyên gia</Title>
+          </div>
+          <Link to="/blogs" style={{ fontWeight: 600, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--navy)', background: '#f1f5f9', padding: '10px 20px', borderRadius: 'var(--radius-full)', transition: 'all 0.2s' }}>
+            Xem tất cả <ArrowRightOutlined />
+          </Link>
+        </div>
+
+        <Row gutter={[24, 24]}>
+          {blogs.map((blog, idx) => (
+            <Col xs={24} md={8} key={blog.id}>
+              <Card
+                hoverable
+                className="blog-card hover-card fade-in-up"
+                style={{ height: '100%', borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: 'none', boxShadow: 'var(--shadow-md)', animationDelay: `${idx * 0.1}s` }}
+                cover={
+                  blog.image_urls && blog.image_urls.length > 0 ? (
+                    <ImageGrid images={blog.image_urls} height={220} />
+                  ) : (
+                    <div style={{ height: 220, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <FileTextOutlined style={{ fontSize: 40, color: '#cbd5e1' }} />
+                    </div>
+                  )
+                }
+                styles={{ body: { padding: '24px', display: 'flex', flexDirection: 'column' } }}
+                onClick={() => navigate(`/blogs/${blog.slug}`)}
+              >
+                <Card.Meta
+                  title={
+                    <Typography.Paragraph ellipsis={{ rows: 2 }} style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: 1.4 }}>
+                      {blog.title}
+                    </Typography.Paragraph>
+                  }
+                  description={
+                    <div style={{ marginTop: 12 }}>
+                      <Space size="middle" style={{ marginBottom: 16 }}>
+                        <Space size="small">
+                          <Avatar size="small" src={blog.author?.avatar_url} icon={!blog.author?.avatar_url && <UserOutlined />}>
+                            {!blog.author?.avatar_url && getInitials(blog.author?.full_name)}
+                          </Avatar>
+                          <Text type="secondary" style={{ fontSize: 13 }}>{blog.author?.full_name || 'Admin'}</Text>
+                        </Space>
+                        <Text type="secondary" style={{ fontSize: 13 }}>
+                          <ClockCircleOutlined style={{ marginRight: 4 }}/>
+                          {dayjs(blog.created_at).format('DD/MM/YYYY')}
+                        </Text>
+                      </Space>
+                      <Typography.Paragraph type="secondary" ellipsis={{ rows: 3 }} style={{ wordWrap: 'break-word', wordBreak: 'break-word', margin: 0 }}>
+                        {stripHtmlAndTruncate(blog.content, 150)}
+                      </Typography.Paragraph>
+                    </div>
+                  }
+                />
               </Card>
             </Col>
           ))}
