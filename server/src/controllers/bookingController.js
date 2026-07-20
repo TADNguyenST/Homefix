@@ -297,11 +297,44 @@ const getMyBookings = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
     const { status } = req.query;
+    const includeSummary = req.query.include_summary === 'true';
 
     const where = { customer_id: req.user.id };
     if (status) where.status = status;
 
-    const [bookings, total] = await Promise.all([
+    const activeStatuses = [
+      BOOKING_STATUS.PENDING,
+      BOOKING_STATUS.CONFIRMED,
+      BOOKING_STATUS.ASSIGNED,
+      BOOKING_STATUS.IN_PROGRESS,
+      BOOKING_STATUS.INSPECTING,
+      BOOKING_STATUS.QUOTED,
+      BOOKING_STATUS.COMPLETING,
+      BOOKING_STATUS.AWAITING_PAYMENT,
+    ];
+
+    const summaryPromise = includeSummary
+      ? Promise.all([
+        prisma.booking.count({
+          where: { customer_id: req.user.id, status: { in: activeStatuses } },
+        }),
+        prisma.booking.count({
+          where: { customer_id: req.user.id, status: BOOKING_STATUS.COMPLETED },
+        }),
+        prisma.payment.aggregate({
+          where: {
+            status: PAYMENT_STATUS.PAID,
+            booking: {
+              customer_id: req.user.id,
+              status: BOOKING_STATUS.COMPLETED,
+            },
+          },
+          _sum: { amount: true },
+        }),
+      ])
+      : Promise.resolve(null);
+
+    const [bookings, total, summaryData] = await Promise.all([
       prisma.booking.findMany({
         where,
         include: {
@@ -322,9 +355,20 @@ const getMyBookings = async (req, res) => {
         take,
       }),
       prisma.booking.count({ where }),
+      summaryPromise,
     ]);
 
-    return paginated(res, bookings, total, page, limit);
+    const metadata = summaryData
+      ? {
+        summary: {
+          active_bookings: summaryData[0],
+          completed_bookings: summaryData[1],
+          total_spent: Number(summaryData[2]._sum.amount || 0),
+        },
+      }
+      : {};
+
+    return paginated(res, bookings, total, page, limit, metadata);
   } catch (err) {
     console.error('Get my bookings error:', err);
     return error(res, 'Không thể tải danh sách đơn hàng', 500);
