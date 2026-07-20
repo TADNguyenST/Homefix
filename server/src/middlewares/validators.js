@@ -124,7 +124,26 @@ const updateJobStatusSchema = z.object({
     errorMap: () => ({ message: 'Trạng thái hợp lệ: INSPECTING, COMPLETING, AWAITING_PAYMENT' }),
   }),
   note: z.string().max(1000).optional().nullable(),
-  image_urls: z.array(z.string()).optional().nullable(),
+  image_urls: z.array(z.string().min(1).max(500))
+    .max(3, 'Tối đa 3 ảnh sau sửa chữa')
+    .optional()
+    .default([]),
+}).superRefine((data, ctx) => {
+  if (data.new_status === 'AWAITING_PAYMENT' && !data.note?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['note'],
+      message: 'Vui lòng nhập ghi chú bàn giao khi hoàn thành sửa chữa',
+    });
+  }
+
+  if (data.new_status !== 'AWAITING_PAYMENT' && data.image_urls.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['image_urls'],
+      message: 'Chỉ được gửi ảnh khi báo cáo hoàn thành sửa chữa',
+    });
+  }
 });
 
 // ========================

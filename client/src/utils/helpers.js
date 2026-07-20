@@ -118,13 +118,15 @@ export const getNotificationRedirectUrl = (notification, userRole) => {
       }
       if (userRole === 'TECHNICIAN') return `/technician/jobs/${reference_id}`;
       if (userRole === 'ADMIN') {
-        if (type === 'PAYMENT') return `/admin/payments/${reference_id}`;
+        // Payment notifications currently store booking_id as reference_id.
+        if (type === 'PAYMENT') return '/admin/payments';
         return `/admin/bookings`;
       }
       break;
 
     case 'QUOTATION':
-      if (userRole === 'CUSTOMER') return `/customer/quotations/${reference_id}`;
+      // Quotation notifications currently store booking_id as reference_id.
+      if (userRole === 'CUSTOMER') return `/customer/bookings/${reference_id}`;
       if (userRole === 'TECHNICIAN') return `/technician/jobs/${reference_id}`;
       break;
 

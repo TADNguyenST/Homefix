@@ -264,7 +264,7 @@ const updateJobStatus = async (req, res) => {
     if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
 
     const bookingId = parseInt(req.params.id, 10);
-    const { new_status, note, image_urls } = req.body;
+    const { new_status, note, image_urls = [] } = req.body;
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking || booking.technician_profile_id !== profile.id) {
       return error(res, 'Don hang khong ton tai hoac khong thuoc ve ban', 404);
@@ -280,6 +280,23 @@ const updateJobStatus = async (req, res) => {
       return error(res, `Khong the chuyen tu ${booking.status} sang ${new_status}`, 400);
     }
 
+    const noteText = typeof note === 'string' ? note.trim() : '';
+    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT) {
+      if (!noteText) {
+        return error(res, 'Vui long nhap ghi chu ban giao khi hoan thanh sua chua', 400);
+      }
+
+      const ownedImagePattern = new RegExp(
+        `^/uploads/${req.user.id}-\\d+-\\d+\\.(?:jpe?g|png|webp|gif)$`,
+        'i'
+      );
+      if (image_urls.some((url) => !ownedImagePattern.test(url))) {
+        return error(res, 'Anh sau sua chua khong hop le hoac khong thuoc tai khoan cua ban', 403);
+      }
+    } else if (image_urls.length > 0) {
+      return error(res, 'Chi duoc gui anh khi bao cao hoan thanh sua chua', 400);
+    }
+
     const operations = [
       prisma.booking.update({ where: { id: bookingId }, data: { status: new_status } }),
       prisma.bookingStatusHistory.create({
@@ -288,12 +305,12 @@ const updateJobStatus = async (req, res) => {
           from_status: booking.status,
           to_status: new_status,
           changed_by: req.user.id,
-          note: note || `Tho cap nhat trang thai sang ${new_status}`,
+          note: noteText || `Tho cap nhat trang thai sang ${new_status}`,
         },
       }),
     ];
 
-    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT && image_urls && image_urls.length > 0) {
+    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT && image_urls.length > 0) {
       operations.push(
         prisma.bookingImage.createMany({
           data: image_urls.map((url) => ({
@@ -306,16 +323,15 @@ const updateJobStatus = async (req, res) => {
     }
 
     await prisma.$transaction(operations);
-    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT) {
-      await notifyAwaitingPayment(booking.customer_id, bookingId, booking.payment_method);
-    }
-    if (new_status === BOOKING_STATUS.INSPECTING) {
-      try {
-        const profile = await getMyProfile(req.user.id, { user: true });
-        await notifyJobInspecting(booking.customer_id, bookingId, profile.user.full_name);
-      } catch (notifErr) {
-        console.error('Failed to send job inspecting notification:', notifErr.message);
+    try {
+      if (new_status === BOOKING_STATUS.AWAITING_PAYMENT) {
+        await notifyAwaitingPayment(booking.customer_id, bookingId, booking.payment_method);
+      } else if (new_status === BOOKING_STATUS.INSPECTING) {
+        const profileWithUser = await getMyProfile(req.user.id, { user: true });
+        await notifyJobInspecting(booking.customer_id, bookingId, profileWithUser.user.full_name);
       }
+    } catch (notifErr) {
+      console.error('Failed to send job status notification:', notifErr.message);
     }
 
     return success(res, null, `Cap nhat trang thai thanh ${new_status} thanh cong`);

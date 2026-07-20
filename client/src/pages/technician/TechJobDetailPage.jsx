@@ -9,6 +9,8 @@ import { formatVND, formatDate, formatDateTime } from '../../utils/helpers';
 import { BOOKING_STATUS_STEPS, BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS } from '../../utils/constants';
 
 const { Title, Text } = Typography;
+const API_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
+const resolveImageUrl = (url) => (url?.startsWith('http') ? url : `${API_ORIGIN}${url || ''}`);
 
 const toNumber = (value) => {
   const parsed = Number(value ?? 0);
@@ -55,12 +57,6 @@ export default function TechJobDetailPage() {
   const completionHistory = job.statusHistories?.find(h => h.to_status === 'AWAITING_PAYMENT');
   const completionNoteText = completionHistory?.note;
 
-  const resolveImageUrl = (url) => {
-    if (!url) return '';
-    if (url.startsWith('http')) return url;
-    return `http://localhost:5000${url}`;
-  };
-
   const handleUpdateStatus = async (newStatus) => {
     try {
       setLoadingAction(true);
@@ -96,11 +92,11 @@ export default function TechJobDetailPage() {
       return;
     }
 
+    const uploadedImageUrls = [];
+
     try {
       setUploading(true);
-      const uploadedImageUrls = [];
 
-      // 1. Tải ảnh lên tuần tự
       if (fileList.length > 0) {
         for (const file of fileList) {
           const uploadResult = await uploadApi.image(file.originFileObj);
@@ -110,7 +106,6 @@ export default function TechJobDetailPage() {
         }
       }
 
-      // 2. Gọi API cập nhật trạng thái kèm ảnh và ghi chú
       await technicianApi.updateJobStatus(id, {
         new_status: 'AWAITING_PAYMENT',
         note: completionNote,
@@ -123,6 +118,9 @@ export default function TechJobDetailPage() {
       setFileList([]);
       refetch();
     } catch (err) {
+      if (uploadedImageUrls.length > 0) {
+        await Promise.allSettled(uploadedImageUrls.map(url => uploadApi.remove(url)));
+      }
       message.error(err.message || 'Lỗi khi báo cáo hoàn thành');
     } finally {
       setUploading(false);
@@ -411,6 +409,8 @@ export default function TechJobDetailPage() {
           >
             <Input.TextArea
               rows={4}
+              maxLength={1000}
+              showCount
               value={completionNote}
               onChange={(e) => setCompletionNote(e.target.value)}
               placeholder="Ví dụ: Đã vệ sinh sạch sẽ máy lạnh, nạp gas và sửa bo mạch điều khiển. Máy chạy mát, chạy êm và không còn chảy nước..."
@@ -423,7 +423,18 @@ export default function TechJobDetailPage() {
               listType="picture-card"
               fileList={fileList}
               onChange={({ fileList: newFileList }) => setFileList(newFileList)}
-              beforeUpload={() => false}
+              beforeUpload={(file) => {
+                const acceptedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+                if (!acceptedTypes.includes(file.type)) {
+                  message.error('Chỉ chấp nhận ảnh JPEG, PNG, WebP hoặc GIF');
+                  return Upload.LIST_IGNORE;
+                }
+                if (file.size > 5 * 1024 * 1024) {
+                  message.error('Mỗi ảnh không được vượt quá 5 MB');
+                  return Upload.LIST_IGNORE;
+                }
+                return false;
+              }}
               maxCount={3}
               accept="image/*"
               disabled={uploading}

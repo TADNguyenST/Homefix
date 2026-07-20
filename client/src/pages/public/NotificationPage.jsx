@@ -1,9 +1,8 @@
-import { useState } from 'react';
-import { Card, List, Typography, Spin, Button, Tag, Space, message, Badge } from 'antd';
+import { Card, List, Typography, Spin, Button, message, Badge } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationApi } from '../../api/bookingApi';
-import { formatDateTime, timeAgo, getNotificationRedirectUrl } from '../../utils/helpers';
+import { timeAgo, getNotificationRedirectUrl } from '../../utils/helpers';
 import { useAuth } from '../../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 
@@ -25,7 +24,7 @@ export default function NotificationPage() {
   const markAsReadMutation = useMutation({
     mutationFn: (id) => notificationApi.read(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     }
   });
 
@@ -33,7 +32,7 @@ export default function NotificationPage() {
     mutationFn: () => notificationApi.readAll(),
     onSuccess: () => {
       message.success('Đã đánh dấu tất cả là đã đọc');
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     }
   });
 

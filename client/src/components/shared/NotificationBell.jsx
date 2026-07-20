@@ -1,24 +1,25 @@
-import { Badge, Dropdown, Menu, Spin } from 'antd';
+import { Badge, Dropdown } from 'antd';
 import { BellOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
-import { notificationApi } from '../../api/bookingApi'; // Notification is in bookingApi or we can extract it
-import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { notificationApi } from '../../api/bookingApi';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { getNotificationRedirectUrl } from '../../utils/helpers';
 
 export default function NotificationBell() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const { data: notificationsData, isLoading } = useQuery({
+  const { data: notificationsData } = useQuery({
     queryKey: ['notifications', 'unread'],
-    queryFn: () => notificationApi.getAll({ is_read: false }),
+    queryFn: () => notificationApi.getAll({ is_read: false, limit: 5 }),
     enabled: isAuthenticated,
     refetchInterval: 60000, // Poll every minute
   });
 
   const notifications = notificationsData?.data || [];
-  const unreadCount = notifications.length;
+  const unreadCount = notificationsData?.unread_count || 0;
 
   const handleMenuClick = async ({ key }) => {
     if (key === 'header' || key === 'empty') return;
@@ -30,6 +31,7 @@ export default function NotificationBell() {
     if (noti) {
       try {
         await notificationApi.read(noti.id);
+        await queryClient.invalidateQueries({ queryKey: ['notifications'] });
       } catch (err) {
         console.error('Failed to mark read:', err);
       }
