@@ -64,7 +64,7 @@ async function main() {
   const districtsData = [
     {
       name: 'Khu vực Cần Thơ trung tâm',
-      type: 'QUAN',
+      type: 'CENTER',
       wards: [
         ['Ninh Kiều', 'PHUONG'], ['Cái Khế', 'PHUONG'], ['Tân An', 'PHUONG'], ['An Bình', 'PHUONG'],
         ['Thới An Đông', 'PHUONG'], ['Bình Thủy', 'PHUONG'], ['Long Tuyền', 'PHUONG'], ['Cái Răng', 'PHUONG'],
@@ -78,7 +78,7 @@ async function main() {
     },
     {
       name: 'Khu vực Hậu Giang',
-      type: 'HUYEN',
+      type: 'SUBURB',
       wards: [
         ['Vị Thanh', 'PHUONG'], ['Vị Tân', 'PHUONG'], ['Long Bình', 'PHUONG'], ['Long Mỹ', 'PHUONG'],
         ['Long Phú 1', 'PHUONG'], ['Đại Thành', 'PHUONG'], ['Ngã Bảy', 'PHUONG'],
@@ -92,7 +92,7 @@ async function main() {
     },
     {
       name: 'Khu vực Sóc Trăng',
-      type: 'HUYEN',
+      type: 'SUBURB',
       wards: [
         ['Phú Lợi', 'PHUONG'], ['Sóc Trăng', 'PHUONG'], ['Mỹ Xuyên', 'PHUONG'], ['Vĩnh Phước', 'PHUONG'],
         ['Vĩnh Châu', 'PHUONG'], ['Khánh Hòa', 'PHUONG'], ['Ngã Năm', 'PHUONG'], ['Mỹ Quới', 'PHUONG'],

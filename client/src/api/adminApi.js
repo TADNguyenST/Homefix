@@ -48,9 +48,11 @@ export const adminApi = {
   getDistricts: (params) => axiosClient.get('/admin/districts', { params }),
   createDistrict: (data) => axiosClient.post('/admin/districts', data),
   updateDistrict: (id, data) => axiosClient.put(`/admin/districts/${id}`, data),
+  toggleDistrict: (id) => axiosClient.put(`/admin/districts/${id}/toggle`),
   deleteDistrict: (id) => axiosClient.delete(`/admin/districts/${id}`),
   createWard: (districtId, data) => axiosClient.post(`/admin/districts/${districtId}/wards`, data),
   updateWard: (id, data) => axiosClient.put(`/admin/wards/${id}`, data),
+  toggleWard: (id) => axiosClient.put(`/admin/wards/${id}/toggle`),
   deleteWard: (id) => axiosClient.delete(`/admin/wards/${id}`),
 
   // Vouchers

@@ -227,6 +227,7 @@ const setDefaultAddress = async (req, res) => {
 const getDistricts = async (req, res) => {
   try {
     const districts = await prisma.district.findMany({
+      where: { is_active: true },
       orderBy: { id: 'asc' },
     });
     return success(res, districts);
@@ -245,7 +246,7 @@ const getWards = async (req, res) => {
     if (!districtId) return error(res, 'Thiếu ID khu vực phục vụ', 400);
 
     const wards = await prisma.ward.findMany({
-      where: { district_id: districtId },
+      where: { district_id: districtId, is_active: true },
       orderBy: { id: 'asc' },
     });
     return success(res, wards);
