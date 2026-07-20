@@ -27,7 +27,7 @@ export default function NotificationBell() {
       navigate(user?.role === 'CUSTOMER' ? '/customer/notifications' : (user?.role === 'TECHNICIAN' ? '/technician/notifications' : '/admin/notifications'));
       return;
     }
-    const noti = notifications.find(n => n.id === Number(key));
+    const noti = notifications.find(n => String(n.id) === String(key));
     if (noti) {
       try {
         await notificationApi.read(noti.id);
