@@ -37,6 +37,7 @@ import TechQuotationForm from './pages/technician/TechQuotationForm';
 import TechSchedulePage from './pages/technician/TechSchedulePage';
 import TechHistoryPage from './pages/technician/TechHistoryPage';
 import TechRatingPage from './pages/technician/TechRatingPage';
+import TechWalletPage from './pages/technician/TechWalletPage';
 
 // Admin Routes
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -94,6 +95,7 @@ function App() {
           <Route path="schedule" element={<TechSchedulePage />} />
           <Route path="history" element={<TechHistoryPage />} />
           <Route path="rating" element={<TechRatingPage />} />
+          <Route path="wallet" element={<TechWalletPage />} />
           <Route path="profile" element={<AccountProfilePage />} />
           <Route path="notifications" element={<NotificationPage />} />
         </Route>

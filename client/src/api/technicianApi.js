@@ -11,4 +11,5 @@ export const technicianApi = {
   confirmCash: (id) => axiosClient.put(`/technician/jobs/${id}/confirm-cash`),
   getSchedule: () => axiosClient.get('/technician/schedule'),
   getRating: () => axiosClient.get('/technician/rating'),
+  getMyCashWallet: () => axiosClient.get('/technician/cash-wallet'),
 };

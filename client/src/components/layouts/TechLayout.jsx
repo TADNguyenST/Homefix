@@ -6,7 +6,8 @@ import {
   CalendarOutlined,
   StarOutlined,
   UserOutlined,
-  LogoutOutlined
+  LogoutOutlined,
+  WalletOutlined,
 } from '@ant-design/icons';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -50,6 +51,11 @@ export default function TechLayout() {
       key: '/technician/rating',
       icon: <StarOutlined />,
       label: <Link to="/technician/rating">Đánh giá</Link>,
+    },
+    {
+      key: '/technician/wallet',
+      icon: <WalletOutlined />,
+      label: <Link to="/technician/wallet">Ví tiền mặt</Link>,
     },
   ];
 
