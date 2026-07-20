@@ -110,7 +110,12 @@ export const getNotificationRedirectUrl = (notification, userRole) => {
   switch (type) {
     case 'BOOKING':
     case 'PAYMENT':
-      if (userRole === 'CUSTOMER') return `/customer/bookings/${reference_id}`;
+      if (userRole === 'CUSTOMER') {
+        if (notification.title === 'Sửa chữa hoàn thành' || (notification.message && notification.message.includes('đánh giá'))) {
+          return `/customer/reviews/new/${reference_id}`;
+        }
+        return `/customer/bookings/${reference_id}`;
+      }
       if (userRole === 'TECHNICIAN') return `/technician/jobs/${reference_id}`;
       if (userRole === 'ADMIN') {
         if (type === 'PAYMENT') return `/admin/payments/${reference_id}`;

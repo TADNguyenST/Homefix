@@ -20,6 +20,26 @@ export default function NotificationBell() {
   const notifications = notificationsData?.data || [];
   const unreadCount = notifications.length;
 
+  const handleMenuClick = async ({ key }) => {
+    if (key === 'header' || key === 'empty') return;
+    if (key === 'view-all') {
+      navigate(user?.role === 'CUSTOMER' ? '/customer/notifications' : (user?.role === 'TECHNICIAN' ? '/technician/notifications' : '/admin/notifications'));
+      return;
+    }
+    const noti = notifications.find(n => n.id === Number(key));
+    if (noti) {
+      try {
+        await notificationApi.read(noti.id);
+      } catch (err) {
+        console.error('Failed to mark read:', err);
+      }
+      const redirectUrl = getNotificationRedirectUrl(noti, user?.role);
+      if (redirectUrl) {
+        navigate(redirectUrl);
+      }
+    }
+  };
+
   const items = [
     {
       key: 'header',
@@ -33,18 +53,10 @@ export default function NotificationBell() {
           <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{noti.message}</div>
         </div>
       ),
-      onClick: async () => {
-        await notificationApi.read(noti.id);
-        const redirectUrl = getNotificationRedirectUrl(noti, user?.role);
-        if (redirectUrl) {
-          navigate(redirectUrl);
-        }
-      }
     })),
     {
       key: 'view-all',
       label: <div style={{ textAlign: 'center', color: '#1890ff', padding: '8px 0' }}>Xem tất cả</div>,
-      onClick: () => navigate(user?.role === 'CUSTOMER' ? '/customer/notifications' : (user?.role === 'TECHNICIAN' ? '/technician/notifications' : '/admin/notifications')),
     }
   ];
 
@@ -54,7 +66,7 @@ export default function NotificationBell() {
   }
 
   return (
-    <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+    <Dropdown menu={{ items, onClick: handleMenuClick }} trigger={['click']} placement="bottomRight">
       <Badge count={unreadCount} style={{ cursor: 'pointer' }}>
         <BellOutlined style={{ fontSize: 20, cursor: 'pointer' }} />
       </Badge>
