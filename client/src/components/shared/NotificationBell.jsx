@@ -1,6 +1,6 @@
 import { Badge, Dropdown, Menu, Spin } from 'antd';
 import { BellOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { notificationApi } from '../../api/bookingApi'; // Notification is in bookingApi or we can extract it
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -9,6 +9,7 @@ import { getNotificationRedirectUrl } from '../../utils/helpers';
 export default function NotificationBell() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: notificationsData, isLoading } = useQuery({
     queryKey: ['notifications', 'unread'],
@@ -26,10 +27,14 @@ export default function NotificationBell() {
       navigate(user?.role === 'CUSTOMER' ? '/customer/notifications' : (user?.role === 'TECHNICIAN' ? '/technician/notifications' : '/admin/notifications'));
       return;
     }
-    const noti = notifications.find(n => n.id === Number(key));
+    const noti = notifications.find(n => String(n.id) === String(key));
     if (noti) {
       try {
         await notificationApi.read(noti.id);
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        queryClient.invalidateQueries({ queryKey: ['admin-bookings'] });
+        queryClient.invalidateQueries({ queryKey: ['tech-jobs'] });
+        queryClient.invalidateQueries({ queryKey: ['bookings'] });
       } catch (err) {
         console.error('Failed to mark read:', err);
       }

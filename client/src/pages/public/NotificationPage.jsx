@@ -25,7 +25,10 @@ export default function NotificationPage() {
   const markAsReadMutation = useMutation({
     mutationFn: (id) => notificationApi.read(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['tech-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
     }
   });
 
@@ -33,7 +36,10 @@ export default function NotificationPage() {
     mutationFn: () => notificationApi.readAll(),
     onSuccess: () => {
       message.success('Đã đánh dấu tất cả là đã đọc');
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['tech-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
     }
   });
 
