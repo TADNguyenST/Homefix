@@ -2072,67 +2072,162 @@ const getVoucherUsages = async (req, res) => {
 };
 /**
  * GET /admin/reports/revenue
- * Lấy báo cáo doanh thu theo khoảng thời gian
+ * Lấy báo cáo doanh thu theo khoảng thời gian (Tối ưu hóa chạy Aggregates ở DB)
  */
 const getRevenueReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const where = {
-      status: PAYMENT_STATUS.PAID,
-    };
-
-    if (startDate || endDate) {
-      where.paid_at = {};
-      if (startDate) where.paid_at.gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        where.paid_at.lte = end;
-      }
+    const start = startDate ? new Date(startDate) : new Date('2000-01-01');
+    const end = endDate ? new Date(endDate) : new Date();
+    if (endDate) {
+      end.setHours(23, 59, 59, 999);
     }
 
-    const payments = await prisma.payment.findMany({
-      where,
-      orderBy: { paid_at: 'desc' },
-      include: {
-        booking: {
-          select: {
-            id: true,
-            status: true,
-            service: { select: { id: true, name: true } },
-            customer: { select: { id: true, full_name: true, phone: true } },
-            technicianProfile: {
-              include: { user: { select: { id: true, full_name: true } } }
-            }
-          }
-        }
-      }
+    // 1. Tính toán summary gọn nhẹ (chỉ chọn trường cần thiết)
+    const paidPaymentsSummary = await prisma.payment.findMany({
+      where: {
+        status: PAYMENT_STATUS.PAID,
+        paid_at: {
+          gte: start,
+          lte: end,
+        },
+      },
+      select: {
+        amount: true,
+        method: true,
+        settlement_status: true,
+      },
     });
+    const summary = summarizePaidPayments(paidPaymentsSummary);
 
-    const summary = summarizePaidPayments(payments);
-
-    // Xử lý dữ liệu biểu đồ theo ngày
-    const revenueByDayMap = new Map();
-    payments.forEach(p => {
-      if (!p.paid_at) return;
-      const dateKey = p.paid_at.toISOString().split('T')[0];
-      if (!revenueByDayMap.has(dateKey)) {
-        revenueByDayMap.set(dateKey, { date: dateKey, revenue: 0, vnpay: 0, cash: 0 });
-      }
-      const dayData = revenueByDayMap.get(dateKey);
-      const amount = Number(p.amount || 0);
-      dayData.revenue += amount;
-      if (p.method === PAYMENT_METHOD.VNPAY) dayData.vnpay += amount;
-      else if (p.method === PAYMENT_METHOD.CASH) dayData.cash += amount;
-    });
-
-    const revenueByDay = Array.from(revenueByDayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+    // 2. Chạy SQL Raw Queries song song ở Database để tăng hiệu năng tối đa
+    const [
+      dailyStats,
+      serviceStats,
+      districtStats,
+      technicianStats,
+      customerStats,
+      quotationItemStats,
+      payments,
+    ] = await Promise.all([
+      // Doanh thu & số đơn theo ngày
+      prisma.$queryRaw`
+        SELECT 
+          TO_CHAR(paid_at, 'YYYY-MM-DD') as "dateKey",
+          TO_CHAR(paid_at, 'DD/MM') as "date",
+          COALESCE(SUM(amount)::float, 0) as "revenue",
+          COUNT(id)::int as "bookings"
+        FROM payments
+        WHERE status = 'PAID' AND paid_at >= ${start} AND paid_at <= ${end}
+        GROUP BY TO_CHAR(paid_at, 'YYYY-MM-DD'), TO_CHAR(paid_at, 'DD/MM')
+        ORDER BY "dateKey" ASC
+      `,
+      // Doanh thu theo Dịch vụ
+      prisma.$queryRaw`
+        SELECT 
+          s.name as "name",
+          COALESCE(SUM(p.amount)::float, 0) as "revenue",
+          COUNT(b.id)::int as "bookings"
+        FROM bookings b
+        JOIN payments p ON p.booking_id = b.id
+        JOIN services s ON s.id = b.service_id
+        WHERE p.status = 'PAID' AND p.paid_at >= ${start} AND p.paid_at <= ${end}
+        GROUP BY s.name
+        ORDER BY "revenue" DESC
+      `,
+      // Doanh thu theo Khu vực
+      prisma.$queryRaw`
+        SELECT 
+          d.name as "name",
+          COALESCE(SUM(p.amount)::float, 0) as "revenue",
+          COUNT(b.id)::int as "bookings"
+        FROM bookings b
+        JOIN payments p ON p.booking_id = b.id
+        JOIN districts d ON d.id = b.district_id
+        WHERE p.status = 'PAID' AND p.paid_at >= ${start} AND p.paid_at <= ${end}
+        GROUP BY d.name
+        ORDER BY "revenue" DESC
+      `,
+      // Doanh thu theo Kỹ thuật viên
+      prisma.$queryRaw`
+        SELECT 
+          COALESCE(u.full_name, 'Chưa gán thợ') as "name",
+          COALESCE(SUM(p.amount)::float, 0) as "revenue",
+          COUNT(b.id)::int as "bookings"
+        FROM bookings b
+        JOIN payments p ON p.booking_id = b.id
+        LEFT JOIN technician_profiles tp ON tp.id = b.technician_profile_id
+        LEFT JOIN users u ON u.id = tp.user_id
+        WHERE p.status = 'PAID' AND p.paid_at >= ${start} AND p.paid_at <= ${end}
+        GROUP BY u.full_name
+        ORDER BY "revenue" DESC
+      `,
+      // Thống kê Khách hàng thân thiết (Top 20 Spenders)
+      prisma.$queryRaw`
+        SELECT 
+          u.id as "id",
+          u.full_name as "name",
+          u.phone as "phone",
+          COALESCE(SUM(p.amount)::float, 0) as "revenue",
+          COUNT(b.id)::int as "bookings"
+        FROM bookings b
+        JOIN payments p ON p.booking_id = b.id
+        JOIN users u ON u.id = b.customer_id
+        WHERE p.status = 'PAID' AND p.paid_at >= ${start} AND p.paid_at <= ${end}
+        GROUP BY u.id, u.full_name, u.phone
+        ORDER BY "revenue" DESC
+        LIMIT 20
+      `,
+      // Thống kê Linh kiện phụ trợ đã bán
+      prisma.$queryRaw`
+        SELECT 
+          qi.item_name as "name",
+          SUM(qi.quantity)::int as "quantity",
+          COALESCE(SUM(qi.quantity * qi.unit_price)::float, 0) as "revenue"
+        FROM quotation_items qi
+        JOIN quotations q ON q.id = qi.quotation_id
+        JOIN bookings b ON b.id = q.booking_id
+        JOIN payments p ON p.booking_id = b.id
+        WHERE q.status = 'ACCEPTED' AND p.status = 'PAID' AND p.paid_at >= ${start} AND p.paid_at <= ${end}
+        GROUP BY qi.item_name
+        ORDER BY "revenue" DESC
+      `,
+      // Chi tiết các giao dịch để phục vụ bảng kê khai và xuất Excel CSV
+      prisma.payment.findMany({
+        where: {
+          status: PAYMENT_STATUS.PAID,
+          paid_at: {
+            gte: start,
+            lte: end,
+          },
+        },
+        orderBy: { paid_at: 'desc' },
+        include: {
+          booking: {
+            select: {
+              id: true,
+              status: true,
+              service: { select: { id: true, name: true } },
+              customer: { select: { id: true, full_name: true, phone: true } },
+              technicianProfile: {
+                include: { user: { select: { id: true, full_name: true } } },
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
     return success(res, {
       summary,
-      revenueByDay,
-      payments
+      dailyStats,
+      serviceStats,
+      districtStats,
+      technicianStats,
+      customerStats,
+      quotationItemStats,
+      payments,
     });
   } catch (err) {
     console.error('getRevenueReport error:', err);
