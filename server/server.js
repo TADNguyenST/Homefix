@@ -16,6 +16,7 @@ const technicianRoutes = require('./src/routes/technicianRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const aiRoutes = require('./src/routes/aiRoutes');
 const uploadRoutes = require('./src/routes/uploadRoutes');
+const blogRoutes = require('./src/routes/blogRoutes');
 const { verifyMailConnection } = require('./src/utils/mailer');
 const path = require('path');
 
@@ -42,6 +43,7 @@ app.use('/api/technician', technicianRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/blogs', blogRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

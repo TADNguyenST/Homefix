@@ -1,50 +1,42 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { v2: cloudinary } = require('cloudinary');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const { authMiddleware, roleMiddleware } = require('../middlewares/authMiddleware');
 
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Multer storage config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, `${uniqueSuffix}${ext}`);
-  }
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Chỉ chấp nhận file ảnh (JPEG, PNG, WebP, GIF)'), false);
-  }
-};
+// Configure Multer Storage for Cloudinary
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'homefix', // The folder name in Cloudinary
+    allowed_formats: ['jpg', 'png', 'jpeg', 'webp', 'gif'],
+    // format: async (req, file) => 'png', // Optional: force format
+    // public_id: (req, file) => 'computed-filename-using-request',
+  },
+});
 
 const upload = multer({ 
-  storage, 
-  fileFilter,
+  storage,
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB max
 });
 
-// POST /api/upload — Upload single image for service images and booking evidence
+// POST /api/upload — Upload single image
 router.post('/', authMiddleware, roleMiddleware(['ADMIN', 'CUSTOMER', 'TECHNICIAN']), upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'Không có file nào được upload' });
   }
 
-  const imageUrl = `/uploads/${req.file.filename}`;
+  // req.file.path contains the URL to the uploaded image in Cloudinary
+  const imageUrl = req.file.path;
+  
   return res.status(200).json({
     success: true,
     data: { url: imageUrl },

@@ -39,6 +39,7 @@ model User {
   reviews             Review[]
   complaints          Complaint[]
   notifications       Notification[]
+  blogs               Blog[]
 
   @@map("users")
 }
@@ -507,4 +508,20 @@ model AiAnalysis {
   booking Booking @relation(fields: [booking_id], references: [id], onDelete: Cascade)
 
   @@map("ai_analysis")
+}
+
+model Blog {
+  id           Int      @id @default(autoincrement())
+  title        String   @db.VarChar(255)
+  slug         String   @unique @db.VarChar(255)
+  content      String   @db.Text
+  image_urls   String[] @default([])
+  author_id    Int
+  is_published Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  author       User     @relation(fields: [author_id], references: [id], onDelete: Cascade)
+
+  @@map("blogs")
 }

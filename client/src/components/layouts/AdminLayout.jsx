@@ -11,7 +11,8 @@ import {
   LogoutOutlined,
   EnvironmentOutlined,
   GiftOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -99,6 +100,11 @@ export default function AdminLayout() {
       key: '/admin/reports',
       icon: <BarChartOutlined />,
       label: <Link to="/admin/reports">Báo cáo</Link>,
+    },
+    {
+      key: '/admin/blogs',
+      icon: <FileTextOutlined />,
+      label: <Link to="/admin/blogs">Bài viết</Link>,
     },
   ];
 

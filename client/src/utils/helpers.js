@@ -87,3 +87,12 @@ export const getInitials = (name) => {
   if (parts.length === 1) return parts[0][0].toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
+
+export const stripHtmlAndTruncate = (html, maxLength = 150) => {
+  if (!html) return '';
+  const tmp = document.createElement('DIV');
+  tmp.innerHTML = html;
+  const text = tmp.textContent || tmp.innerText || '';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+};

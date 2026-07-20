@@ -15,6 +15,8 @@ import LandingPage from './pages/public/LandingPage';
 import ServiceListPage from './pages/public/ServiceListPage';
 import ServiceDetailPage from './pages/public/ServiceDetailPage';
 import NotificationPage from './pages/public/NotificationPage';
+import BlogListPage from './pages/public/BlogListPage';
+import BlogDetailPage from './pages/public/BlogDetailPage';
 
 // Dashboards (Placeholders)
 import CustomerDashboard from './pages/customer/CustomerDashboard';
@@ -52,6 +54,7 @@ import AdminVouchersPage from './pages/admin/AdminVouchersPage';
 import AdminPaymentsPage from './pages/admin/AdminPaymentsPage';
 import AdminPaymentDetailPage from './pages/admin/AdminPaymentDetailPage';
 import AdminComplaintsPage from './pages/admin/AdminComplaintsPage';
+import AdminBlogsPage from './pages/admin/AdminBlogsPage';
 
 function App() {
   return (
@@ -61,6 +64,8 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/services" element={<ServiceListPage />} />
         <Route path="/services/:id" element={<ServiceDetailPage />} />
+        <Route path="/blogs" element={<BlogListPage />} />
+        <Route path="/blogs/:slug" element={<BlogDetailPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -114,6 +119,7 @@ function App() {
           <Route path="payments" element={<AdminPaymentsPage />} />
           <Route path="payments/:id" element={<AdminPaymentDetailPage />} />
           <Route path="complaints" element={<AdminComplaintsPage />} />
+          <Route path="blogs" element={<AdminBlogsPage />} />
           <Route path="reports" element={<AdminReportsPage />} />
           <Route path="notifications" element={<NotificationPage />} />
           <Route path="profile" element={<AccountProfilePage />} />
