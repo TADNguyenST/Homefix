@@ -184,12 +184,26 @@ const createDeviceTypeSchema = z.object({
 
 const createDistrictSchema = z.object({
   name: z.string().min(2).max(100),
-  type: z.enum(['QUAN', 'HUYEN']),
+  type: z.enum(['CENTER', 'SUBURB']),
+  is_active: z.boolean().optional().default(true),
+});
+
+const updateDistrictSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  type: z.enum(['CENTER', 'SUBURB']).optional(),
+  is_active: z.boolean().optional(),
 });
 
 const createWardSchema = z.object({
   name: z.string().min(2).max(100),
   type: z.enum(['PHUONG', 'XA', 'THI_TRAN']),
+  is_active: z.boolean().optional().default(true),
+});
+
+const updateWardSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  type: z.enum(['PHUONG', 'XA', 'THI_TRAN']).optional(),
+  is_active: z.boolean().optional(),
 });
 
 const createVoucherSchema = z.object({
@@ -306,7 +320,7 @@ module.exports = {
   createComplaintSchema, resolveComplaintSchema,
   // Admin CRUD
   createCategorySchema, createServiceSchema, createDeviceTypeSchema,
-  createDistrictSchema, createWardSchema, createVoucherSchema,
+  createDistrictSchema, updateDistrictSchema, createWardSchema, updateWardSchema, createVoucherSchema,
   createTechnicianSchema, updateTechSkillsSchema, updateTechScheduleSchema,
   assignTechSchema,
   // AI

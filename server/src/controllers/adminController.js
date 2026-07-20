@@ -1221,8 +1221,11 @@ const getDistricts = async (req, res) => {
  */
 const createDistrict = async (req, res) => {
   try {
-    const { name, type } = req.body;
-    const district = await prisma.district.create({ data: { name, type } });
+    const { name, type, is_active } = req.body;
+    const existing = await prisma.district.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
+    if (existing) return error(res, 'Tên khu vực phục vụ đã tồn tại', 400);
+
+    const district = await prisma.district.create({ data: { name, type, is_active: is_active ?? true } });
     return success(res, district, 'Tạo khu vực phục vụ thành công', 201);
   } catch (err) {
     console.error('createDistrict error:', err);
@@ -1236,12 +1239,19 @@ const createDistrict = async (req, res) => {
 const updateDistrict = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, type } = req.body;
+    const { name, type, is_active } = req.body;
+
+    if (name) {
+      const existing = await prisma.district.findFirst({ where: { name: { equals: name, mode: 'insensitive' }, id: { not: parseInt(id) } } });
+      if (existing) return error(res, 'Tên khu vực phục vụ đã tồn tại', 400);
+    }
+
     const district = await prisma.district.update({
       where: { id: parseInt(id) },
       data: {
         ...(name !== undefined && { name }),
         ...(type !== undefined && { type }),
+        ...(is_active !== undefined && { is_active }),
       },
     });
     return success(res, district, 'Cập nhật khu vực phục vụ thành công');
@@ -1252,19 +1262,42 @@ const updateDistrict = async (req, res) => {
 };
 
 /**
+ * PUT /admin/districts/:id/toggle
+ */
+const toggleDistrict = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const district = await prisma.district.findUnique({ where: { id: parseInt(id) } });
+    if (!district) return error(res, 'Khu vực phục vụ không tồn tại', 404);
+
+    const updated = await prisma.district.update({
+      where: { id: parseInt(id) },
+      data: { is_active: !district.is_active },
+    });
+    return success(res, updated, `Khu vực phục vụ đã được ${updated.is_active ? 'kích hoạt' : 'vô hiệu hóa'}`);
+  } catch (err) {
+    console.error('toggleDistrict error:', err);
+    return error(res, 'Không thể thay đổi trạng thái khu vực phục vụ', 500);
+  }
+};
+
+/**
  * POST /admin/districts/:districtId/wards
  */
 const createWard = async (req, res) => {
   try {
     const { districtId } = req.params;
-    const { name, type } = req.body;
+    const { name, type, is_active } = req.body;
 
     // Kiểm tra district tồn tại
     const district = await prisma.district.findUnique({ where: { id: parseInt(districtId) } });
     if (!district) return error(res, 'Khu vực phục vụ không tồn tại', 404);
 
+    const existing = await prisma.ward.findFirst({ where: { name: { equals: name, mode: 'insensitive' }, district_id: parseInt(districtId) } });
+    if (existing) return error(res, 'Tên phường/xã đã tồn tại trong khu vực này', 400);
+
     const ward = await prisma.ward.create({
-      data: { district_id: parseInt(districtId), name, type },
+      data: { district_id: parseInt(districtId), name, type, is_active: is_active ?? true },
     });
     return success(res, ward, 'Tạo phường/xã thành công', 201);
   } catch (err) {
@@ -1279,18 +1312,48 @@ const createWard = async (req, res) => {
 const updateWard = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, type } = req.body;
+    const { name, type, is_active } = req.body;
+    
+    const currentWard = await prisma.ward.findUnique({ where: { id: parseInt(id) } });
+    if (!currentWard) return error(res, 'Phường/xã không tồn tại', 404);
+
+    if (name) {
+       const existing = await prisma.ward.findFirst({ where: { name: { equals: name, mode: 'insensitive' }, district_id: currentWard.district_id, id: { not: parseInt(id) } } });
+       if (existing) return error(res, 'Tên phường/xã đã tồn tại trong khu vực này', 400);
+    }
+
     const ward = await prisma.ward.update({
       where: { id: parseInt(id) },
       data: {
         ...(name !== undefined && { name }),
         ...(type !== undefined && { type }),
+        ...(is_active !== undefined && { is_active }),
       },
     });
     return success(res, ward, 'Cập nhật phường/xã thành công');
   } catch (err) {
     console.error('updateWard error:', err);
     return error(res, 'Không thể cập nhật phường/xã', 500);
+  }
+};
+
+/**
+ * PUT /admin/wards/:id/toggle
+ */
+const toggleWard = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const ward = await prisma.ward.findUnique({ where: { id: parseInt(id) } });
+    if (!ward) return error(res, 'Phường/xã không tồn tại', 404);
+
+    const updated = await prisma.ward.update({
+      where: { id: parseInt(id) },
+      data: { is_active: !ward.is_active },
+    });
+    return success(res, updated, `Phường/xã đã được ${updated.is_active ? 'kích hoạt' : 'vô hiệu hóa'}`);
+  } catch (err) {
+    console.error('toggleWard error:', err);
+    return error(res, 'Không thể thay đổi trạng thái phường/xã', 500);
   }
 };
 
@@ -1878,7 +1941,7 @@ module.exports = {
   // Device Type CRUD
   getDeviceTypes, createDeviceType, updateDeviceType, deleteDeviceType,
   // District & Ward
-  getDistricts, createDistrict, updateDistrict, deleteDistrict, createWard, updateWard, deleteWard,
+  getDistricts, createDistrict, updateDistrict, toggleDistrict, deleteDistrict, createWard, updateWard, toggleWard, deleteWard,
   // Voucher CRUD
   getVouchers, createVoucher, updateVoucher, toggleVoucher, getVoucherUsages,
   // Payment & Complaint

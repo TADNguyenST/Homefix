@@ -17,7 +17,9 @@ const {
   createServiceSchema,
   createDeviceTypeSchema,
   createDistrictSchema,
+  updateDistrictSchema,
   createWardSchema,
+  updateWardSchema,
   createVoucherSchema,
   createTechnicianSchema,
   updateTechSkillsSchema,
@@ -89,10 +91,12 @@ router.delete('/device-types/:id', admin.deleteDeviceType);
 // ========================
 router.get('/districts', admin.getDistricts);
 router.post('/districts', validate(createDistrictSchema), admin.createDistrict);
-router.put('/districts/:id', admin.updateDistrict);
+router.put('/districts/:id', validate(updateDistrictSchema), admin.updateDistrict);
+router.put('/districts/:id/toggle', admin.toggleDistrict);
 router.delete('/districts/:id', admin.deleteDistrict);
 router.post('/districts/:districtId/wards', validate(createWardSchema), admin.createWard);
-router.put('/wards/:id', admin.updateWard);
+router.put('/wards/:id', validate(updateWardSchema), admin.updateWard);
+router.put('/wards/:id/toggle', admin.toggleWard);
 router.delete('/wards/:id', admin.deleteWard);
 
 // ========================

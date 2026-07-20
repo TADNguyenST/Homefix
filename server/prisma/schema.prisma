@@ -55,14 +55,15 @@ model PasswordResetToken {
 }
 
 enum DistrictType {
-  QUAN
-  HUYEN
+  CENTER
+  SUBURB
 }
 
 model District {
   id         Int          @id @default(autoincrement())
   name       String       @db.VarChar(100)
   type       DistrictType
+  is_active  Boolean      @default(true)
   created_at DateTime     @default(now())
   updated_at DateTime     @updatedAt
 
@@ -85,6 +86,7 @@ model Ward {
   district_id Int
   name        String   @db.VarChar(100)
   type        WardType
+  is_active   Boolean  @default(true)
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
