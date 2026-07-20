@@ -64,6 +64,8 @@ export const adminApi = {
   getPayments: (params) => axiosClient.get('/admin/payments', { params }),
   getPaymentById: (id) => axiosClient.get(`/admin/payments/${id}`),
   confirmCashSettlement: (id, data = {}) => axiosClient.put(`/admin/payments/${id}/confirm-cash-settlement`, data),
+  getTechnicianWallets: () => axiosClient.get('/admin/payments/technician-wallets'),
+  confirmCashSettlementBatch: (data) => axiosClient.put('/admin/payments/confirm-cash-settlement-batch', data),
 
   // Complaints
   getComplaints: (params) => axiosClient.get('/admin/complaints', { params }),
