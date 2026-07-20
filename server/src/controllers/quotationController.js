@@ -7,7 +7,7 @@ const prisma = require('../utils/prisma');
 const { success, error } = require('../utils/response');
 const { QUOTATION_STATUS, BOOKING_STATUS } = require('../config/constants');
 const { notifyQuotationResponse } = require('../services/notificationService');
-const { calculatePayableAmount } = require('../utils/pricing');
+const { calculatePayableAmount, calculateVoucherDiscount } = require('../utils/pricing');
 
 // ========================
 // VIEW QUOTATION DETAIL — Xem chi tiết 1 báo giá
@@ -28,6 +28,7 @@ const getQuotationById = async (req, res) => {
             status: true,
             estimated_price: true,
             discount_amount: true,
+            voucher: true,
             service: { select: { id: true, name: true } },
           },
         },
@@ -104,6 +105,7 @@ const acceptQuotation = async (req, res) => {
             technician_profile_id: true,
             estimated_price: true,
             discount_amount: true,
+            voucher: true,
           },
         },
       },
@@ -126,7 +128,8 @@ const acceptQuotation = async (req, res) => {
     }
 
     // total_extra_price là tạm tính báo giá; voucher của booking được trừ một lần vào số cuối.
-    const finalPrice = calculatePayableAmount(quotation.total_extra_price, quotation.booking.discount_amount);
+    const discountAmount = calculateVoucherDiscount(quotation.booking.voucher, quotation.total_extra_price);
+    const finalPrice = calculatePayableAmount(quotation.total_extra_price, discountAmount);
 
     await prisma.$transaction([
       prisma.quotation.update({
@@ -142,6 +145,7 @@ const acceptQuotation = async (req, res) => {
         data: {
           status: BOOKING_STATUS.COMPLETING,
           final_price: finalPrice,
+          discount_amount: discountAmount,
         },
       }),
       prisma.payment.update({
@@ -250,13 +254,15 @@ const rejectQuotation = async (req, res) => {
 
       // Khách từ chối báo giá nên đơn bị hủy và voucher được hoàn lượt sử dụng.
       if (quotation.booking.voucher_id) {
-        await tx.voucher.update({
-          where: { id: quotation.booking.voucher_id },
-          data: { used_count: { decrement: 1 } },
-        });
-        await tx.voucherUsage.deleteMany({
+        const releasedUsage = await tx.voucherUsage.deleteMany({
           where: { voucher_id: quotation.booking.voucher_id, booking_id: quotation.booking.id },
         });
+        if (releasedUsage.count > 0) {
+          await tx.voucher.updateMany({
+            where: { id: quotation.booking.voucher_id, used_count: { gt: 0 } },
+            data: { used_count: { decrement: 1 } },
+          });
+        }
       }
     });
 

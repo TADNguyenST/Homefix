@@ -191,28 +191,16 @@ const createDeviceTypeSchema = z.object({
 });
 
 const createDistrictSchema = z.object({
-  name: z.string().min(2).max(100),
-  type: z.enum(['CENTER', 'SUBURB']),
+  province_code: z.number().int().positive(),
   is_active: z.boolean().optional().default(true),
+  wards: z.array(z.object({
+    external_code: z.number().int().positive(),
+  })).max(200).optional().default([]),
 });
 
-const updateDistrictSchema = z.object({
-  name: z.string().min(2).max(100).optional(),
-  type: z.enum(['CENTER', 'SUBURB']).optional(),
-  is_active: z.boolean().optional(),
-});
-
-const createWardSchema = z.object({
-  name: z.string().min(2).max(100),
-  type: z.enum(['PHUONG', 'XA', 'THI_TRAN']),
-  is_active: z.boolean().optional().default(true),
-});
-
-const updateWardSchema = z.object({
-  name: z.string().min(2).max(100).optional(),
-  type: z.enum(['PHUONG', 'XA', 'THI_TRAN']).optional(),
-  is_active: z.boolean().optional(),
-});
+const updateDistrictSchema = z.object({ is_active: z.boolean() });
+const createWardSchema = z.object({ external_code: z.number().int().positive() });
+const updateWardSchema = z.object({ is_active: z.boolean() });
 
 const createVoucherSchema = z.object({
   code: z.string().min(3, 'Mã voucher tối thiểu 3 ký tự').max(50).toUpperCase(),

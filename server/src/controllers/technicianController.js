@@ -6,13 +6,15 @@ const {
   BOOKING_STATUS_TRANSITIONS,
   QUOTATION_STATUS,
   PAYMENT_STATUS,
+  PAYMENT_METHOD,
+  PAYMENT_SETTLEMENT_STATUS,
 } = require('../config/constants');
 const {
   notifyQuotationSent,
   notifyAwaitingPayment,
 } = require('../services/notificationService');
 const { completeBookingPayment } = require('../services/paymentCompletionService');
-const { calculatePayableAmount } = require('../utils/pricing');
+const { calculatePayableAmount, calculateVoucherDiscount } = require('../utils/pricing');
 
 const getMyProfile = async (userId, include = {}) => {
   return prisma.technicianProfile.findUnique({
@@ -286,7 +288,10 @@ const createQuotation = async (req, res) => {
 
     const bookingId = parseInt(req.params.id, 10);
     const { note, items } = req.body;
-    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { voucher: true },
+    });
     if (!booking || booking.technician_profile_id !== profile.id) {
       return error(res, 'Don hang khong ton tai hoac khong thuoc ve ban', 404);
     }
@@ -295,6 +300,8 @@ const createQuotation = async (req, res) => {
     }
 
     const totalExtraPrice = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+    const quotationDiscount = calculateVoucherDiscount(booking.voucher, totalExtraPrice);
+    const quotationPayable = calculatePayableAmount(totalExtraPrice, quotationDiscount);
     const quotation = await prisma.$transaction(async (tx) => {
       const newQuotation = await tx.quotation.create({
         data: {
@@ -314,7 +321,18 @@ const createQuotation = async (req, res) => {
         include: { items: true },
       });
 
-      await tx.booking.update({ where: { id: bookingId }, data: { status: BOOKING_STATUS.QUOTED } });
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: BOOKING_STATUS.QUOTED,
+          discount_amount: quotationDiscount,
+          final_price: null,
+        },
+      });
+      await tx.payment.update({
+        where: { booking_id: bookingId },
+        data: { amount: quotationPayable },
+      });
       await tx.bookingStatusHistory.create({
         data: {
           booking_id: bookingId,
@@ -374,6 +392,60 @@ const confirmCashPayment = async (req, res) => {
   } catch (err) {
     console.error('Confirm cash payment error:', err);
     return error(res, 'Xac nhan thu tien that bai', 500);
+  }
+};
+
+const getMyCashWallet = async (req, res) => {
+  try {
+    const profile = await getMyProfile(req.user.id);
+    if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        method: PAYMENT_METHOD.CASH,
+        status: PAYMENT_STATUS.PAID,
+        booking: { technician_profile_id: profile.id },
+      },
+      include: {
+        booking: {
+          select: {
+            booking_date: true,
+            customer: { select: { full_name: true, phone: true } },
+            service: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: [{ paid_at: 'desc' }, { id: 'desc' }],
+    });
+
+    const walletPayments = payments.map((payment) => ({
+      id: payment.id,
+      booking_id: payment.booking_id,
+      service_name: payment.booking.service.name,
+      customer_name: payment.booking.customer.full_name,
+      customer_phone: payment.booking.customer.phone,
+      booking_date: payment.booking.booking_date,
+      amount: Number(payment.amount),
+      paid_at: payment.paid_at,
+      settlement_status: payment.settlement_status,
+      settlement_note: payment.settlement_note,
+    }));
+
+    const totals = walletPayments.reduce((summary, payment) => {
+      summary.total_collected += payment.amount;
+      if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.SETTLED) {
+        summary.total_settled += payment.amount;
+      }
+      if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.PENDING) {
+        summary.total_pending += payment.amount;
+      }
+      return summary;
+    }, { total_collected: 0, total_settled: 0, total_pending: 0 });
+
+    return success(res, { ...totals, payments: walletPayments });
+  } catch (err) {
+    console.error('Get cash wallet error:', err);
+    return error(res, 'Khong the tai vi tien mat', 500);
   }
 };
 
@@ -478,6 +550,7 @@ module.exports = {
   updateJobStatus,
   createQuotation,
   confirmCashPayment,
+  getMyCashWallet,
   getMySchedule,
   getJobHistory,
   getMyRating,

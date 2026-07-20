@@ -46,6 +46,8 @@ export const adminApi = {
 
   // Districts & Wards
   getDistricts: (params) => axiosClient.get('/admin/districts', { params }),
+  getAdministrativeProvinces: () => axiosClient.get('/admin/administrative/provinces'),
+  getAdministrativeWards: (provinceCode) => axiosClient.get(`/admin/administrative/provinces/${provinceCode}/wards`),
   createDistrict: (data) => axiosClient.post('/admin/districts', data),
   updateDistrict: (id, data) => axiosClient.put(`/admin/districts/${id}`, data),
   toggleDistrict: (id) => axiosClient.put(`/admin/districts/${id}/toggle`),

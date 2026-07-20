@@ -41,8 +41,8 @@ const completeBookingPayment = async ({
 
     const paidAmount = Number(amount ?? booking.final_price ?? payment.amount);
 
-    await tx.payment.update({
-      where: { id: payment.id },
+    const claimedPayment = await tx.payment.updateMany({
+      where: { id: payment.id, status: { not: PAYMENT_STATUS.PAID } },
       data: {
         status: PAYMENT_STATUS.PAID,
         amount: paidAmount,
@@ -60,6 +60,10 @@ const completeBookingPayment = async ({
         failed_reason: null,
       },
     });
+
+    if (claimedPayment.count === 0) {
+      return { alreadyPaid: true, booking, amount: Number(payment.amount) };
+    }
 
     await tx.booking.update({
       where: { id: bookingId },

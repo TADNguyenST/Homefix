@@ -4,13 +4,18 @@
 // ============================================================
 
 const crypto = require('crypto');
-const querystring = require('querystring');
 const prisma = require('../utils/prisma');
 const { success, error, paginated } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { BOOKING_STATUS, PAYMENT_STATUS, QUOTATION_STATUS } = require('../config/constants');
 const { completeBookingPayment } = require('../services/paymentCompletionService');
 const { calculatePayableAmount } = require('../utils/pricing');
+const {
+  stringifyVnpParams,
+  formatVnpDate,
+  normalizeVnpIp,
+  createVnpTxnRef,
+} = require('../utils/vnpay');
 
 // ========================
 // VNPAY CONFIG
@@ -26,23 +31,17 @@ const VNPAY_CONFIG = {
 const isVnpayReady = () =>
   VNPAY_CONFIG.enabled && VNPAY_CONFIG.vnp_TmnCode && VNPAY_CONFIG.vnp_HashSecret;
 
-/**
- * Sắp xếp object theo thứ tự alphabet của key (VNPAY yêu cầu)
- */
-const sortObject = (obj) => {
-  const sorted = {};
-  const str = [];
-  let key;
-  for (key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      str.push(encodeURIComponent(key));
-    }
-  }
-  str.sort();
-  for (key = 0; key < str.length; key++) {
-    sorted[str[key]] = encodeURIComponent(obj[str[key]]).replace(/%20/g, '+');
-  }
-  return sorted;
+const signVnpParams = (params) => crypto
+  .createHmac('sha512', VNPAY_CONFIG.vnp_HashSecret)
+  .update(Buffer.from(stringifyVnpParams(params), 'utf-8'))
+  .digest('hex');
+
+const hasValidVnpSignature = (params, secureHash) => {
+  if (typeof secureHash !== 'string') return false;
+  const signed = signVnpParams(params);
+  const expected = Buffer.from(signed, 'utf8');
+  const received = Buffer.from(secureHash.toLowerCase(), 'utf8');
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 };
 
 // ============================================================
@@ -124,7 +123,7 @@ const createVnpayUrl = async (req, res) => {
 
     // === REAL VNPAY SANDBOX MODE ===
     // 5. Tạo mã giao dịch duy nhất
-    const vnpTxnRef = `HF${bookingId}_${Date.now()}`;
+    const vnpTxnRef = createVnpTxnRef(bookingId);
 
     // Cập nhật payment với txn_ref để callback đối chiếu
     await prisma.payment.update({
@@ -138,7 +137,7 @@ const createVnpayUrl = async (req, res) => {
 
     // 6. Tạo VNPAY Payment URL
     const date = new Date();
-    const createDate = date.toISOString().replace(/[-T:\.Z]/g, '').slice(0, 14); // YYYYMMDDHHmmss
+    const expireDate = new Date(date.getTime() + 15 * 60 * 1000);
 
     let vnp_Params = {
       vnp_Version: '2.1.0',
@@ -147,26 +146,20 @@ const createVnpayUrl = async (req, res) => {
       vnp_Locale: 'vn',
       vnp_CurrCode: 'VND',
       vnp_TxnRef: vnpTxnRef,
-      vnp_OrderInfo: `Thanh toan don hang HomeFix #${bookingId}`,
+      vnp_OrderInfo: `Thanh toan don hang HomeFix ${bookingId}`,
       vnp_OrderType: 'other',
       vnp_Amount: Math.round(finalPrice * 100), // VNPAY yêu cầu nhân 100 (đơn vị: đồng * 100)
       vnp_ReturnUrl: VNPAY_CONFIG.vnp_ReturnUrl,
-      vnp_IpAddr: req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1',
-      vnp_CreateDate: createDate,
+      vnp_IpAddr: normalizeVnpIp(
+        req.headers['x-forwarded-for'] || req.socket.remoteAddress,
+      ),
+      vnp_CreateDate: formatVnpDate(date),
+      vnp_ExpireDate: formatVnpDate(expireDate),
     };
 
     // Sắp xếp alphabet
-    vnp_Params = sortObject(vnp_Params);
-
-    // Tạo chữ ký (Secure Hash)
-    const signData = querystring.stringify(vnp_Params, '&', '=', { encodeURIComponent: (str) => str });
-    const hmac = crypto.createHmac('sha512', VNPAY_CONFIG.vnp_HashSecret);
-    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest('hex');
-
-    vnp_Params['vnp_SecureHash'] = signed;
-
-    // Tạo full URL
-    const paymentUrl = `${VNPAY_CONFIG.vnp_Url}?${querystring.stringify(vnp_Params)}`;
+    const signed = signVnpParams(vnp_Params);
+    const paymentUrl = `${VNPAY_CONFIG.vnp_Url}?${stringifyVnpParams(vnp_Params)}&vnp_SecureHash=${signed}`;
 
     return success(res, {
       mode: 'VNPAY_SANDBOX',
@@ -193,19 +186,13 @@ const vnpayReturn = async (req, res) => {
     delete vnp_Params['vnp_SecureHash'];
     delete vnp_Params['vnp_SecureHashType'];
 
-    vnp_Params = sortObject(vnp_Params);
-
-    // Verify chữ ký
-    const signData = querystring.stringify(vnp_Params, '&', '=', { encodeURIComponent: (str) => str });
-    const hmac = crypto.createHmac('sha512', VNPAY_CONFIG.vnp_HashSecret);
-    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest('hex');
-
-    if (secureHash !== signed) {
+    if (!hasValidVnpSignature(vnp_Params, secureHash)) {
       return error(res, 'Chữ ký không hợp lệ. Giao dịch có thể bị giả mạo.', 400);
     }
 
     const vnpTxnRef = vnp_Params['vnp_TxnRef'];
     const vnpResponseCode = vnp_Params['vnp_ResponseCode'];
+    const vnpTransactionStatus = vnp_Params['vnp_TransactionStatus'];
     const vnpTransactionNo = vnp_Params['vnp_TransactionNo'];
     const paidAmount = Number(vnp_Params['vnp_Amount']) / 100;
 
@@ -230,7 +217,7 @@ const vnpayReturn = async (req, res) => {
       }, 'Giao dịch đã được xử lý trước đó');
     }
 
-    if (vnpResponseCode === '00') {
+    if (vnpResponseCode === '00' && vnpTransactionStatus === '00') {
       // === THANH TOÁN THÀNH CÔNG ===
       await completeBookingPayment({
         bookingId: payment.booking_id,
@@ -249,8 +236,8 @@ const vnpayReturn = async (req, res) => {
       }, 'Thanh toán VNPAY thành công!');
     } else {
       // === THANH TOÁN THẤT BẠI ===
-      await prisma.payment.update({
-        where: { id: payment.id },
+      await prisma.payment.updateMany({
+        where: { id: payment.id, status: { not: PAYMENT_STATUS.PAID } },
         data: {
           status: PAYMENT_STATUS.FAILED,
           vnpay_response_code: vnpResponseCode,
@@ -278,18 +265,13 @@ const vnpayIpn = async (req, res) => {
     delete vnp_Params['vnp_SecureHash'];
     delete vnp_Params['vnp_SecureHashType'];
 
-    vnp_Params = sortObject(vnp_Params);
-
-    const signData = querystring.stringify(vnp_Params, '&', '=', { encodeURIComponent: (str) => str });
-    const hmac = crypto.createHmac('sha512', VNPAY_CONFIG.vnp_HashSecret);
-    const signed = hmac.update(Buffer.from(signData, 'utf-8')).digest('hex');
-
-    if (secureHash !== signed) {
+    if (!hasValidVnpSignature(vnp_Params, secureHash)) {
       return res.status(200).json({ RspCode: '97', Message: 'Invalid signature' });
     }
 
     const vnpTxnRef = vnp_Params['vnp_TxnRef'];
     const vnpResponseCode = vnp_Params['vnp_ResponseCode'];
+    const vnpTransactionStatus = vnp_Params['vnp_TransactionStatus'];
     const vnpTransactionNo = vnp_Params['vnp_TransactionNo'];
     const paidAmount = Number(vnp_Params['vnp_Amount']) / 100;
 
@@ -309,7 +291,7 @@ const vnpayIpn = async (req, res) => {
       return res.status(200).json({ RspCode: '02', Message: 'Already confirmed' });
     }
 
-    if (vnpResponseCode === '00') {
+    if (vnpResponseCode === '00' && vnpTransactionStatus === '00') {
       await completeBookingPayment({
         bookingId: payment.booking_id,
         amount: paidAmount,
@@ -320,8 +302,8 @@ const vnpayIpn = async (req, res) => {
       });
       return res.status(200).json({ RspCode: '00', Message: 'Confirm success' });
     } else {
-      await prisma.payment.update({
-        where: { id: payment.id },
+      await prisma.payment.updateMany({
+        where: { id: payment.id, status: { not: PAYMENT_STATUS.PAID } },
         data: {
           status: PAYMENT_STATUS.FAILED,
           vnpay_response_code: vnpResponseCode,

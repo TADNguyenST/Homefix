@@ -166,6 +166,7 @@ export default function BookingFormPage() {
   };
 
   const onFinish = async (values) => {
+    let uploadedImageUrls = [];
     try {
       setIsSubmitting(true);
       
@@ -191,10 +192,11 @@ export default function BookingFormPage() {
         .map(file => file.originFileObj)
         .filter(Boolean);
 
-      let imageUrls = [];
       if (uploadableFiles.length > 0) {
-        const uploadResults = await Promise.all(uploadableFiles.map(file => uploadApi.image(file)));
-        imageUrls = uploadResults.map(result => result.data?.url).filter(Boolean);
+        for (const file of uploadableFiles) {
+          const uploadResult = await uploadApi.image(file);
+          if (uploadResult.data?.url) uploadedImageUrls.push(uploadResult.data.url);
+        }
       }
 
       const payload = {
@@ -211,7 +213,7 @@ export default function BookingFormPage() {
         payment_method: values.payment_method,
         // Chẩn đoán đính kèm
         ai_diagnosis: aiResult?.suggested_action || aiResult?.diagnosis_solution || null,
-        image_urls: imageUrls,
+        image_urls: uploadedImageUrls,
         voucher_code: values.voucher_code || form.getFieldValue('voucher_code') || null,
       };
 
@@ -220,6 +222,9 @@ export default function BookingFormPage() {
       navigate(`/customer/bookings/${res.data.id}`);
       
     } catch (err) {
+      if (uploadedImageUrls.length > 0) {
+        await Promise.allSettled(uploadedImageUrls.map(url => uploadApi.remove(url)));
+      }
       if (err.errors && err.errors.length > 0) {
         const errorMsgs = err.errors.map(e => `${e.field} (${e.message})`).join(', ');
         message.error(`Lỗi: ${errorMsgs}`);

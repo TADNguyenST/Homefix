@@ -65,6 +65,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/payment-result" element={<PaymentResultPage />} />
       </Route>
 
       {/* Customer Routes */}
@@ -75,7 +76,6 @@ function App() {
           <Route path="bookings" element={<BookingListPage />} />
           <Route path="bookings/:id" element={<BookingDetailPage />} />
           <Route path="quotations/:id" element={<QuotationDetailPage />} />
-          <Route path="payment-result" element={<PaymentResultPage />} />
           <Route path="reviews/new/:bookingId" element={<ReviewPage />} />
           <Route path="complaints" element={<ComplaintPage />} />
           <Route path="vouchers" element={<CustomerVouchersPage />} />

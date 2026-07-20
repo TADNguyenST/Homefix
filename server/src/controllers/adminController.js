@@ -14,6 +14,7 @@ const {
   PAYMENT_SETTLEMENT_STATUS,
 } = require('../config/constants');
 const { sendTechnicianAccountEmail } = require('../utils/mailer');
+const { loadProvinces, loadProvinceWards } = require('./administrativeController');
 
 const summarizePaidPayments = (payments) => payments.reduce((summary, payment) => {
   const amount = Number(payment.amount || 0);
@@ -1256,12 +1257,13 @@ const deleteDeviceType = async (req, res) => {
  */
 const getDistricts = async (req, res) => {
   try {
-    const { search, type } = req.query;
+    const { search, is_active, province_code } = req.query;
 
     // [UC-85] Xây dựng điều kiện filter
     const where = {};
     if (search) where.name = { contains: search, mode: 'insensitive' };
-    if (type) where.type = type;
+    if (is_active !== undefined) where.is_active = is_active === 'true';
+    if (province_code) where.province_code = parseInt(province_code, 10);
 
     const districts = await prisma.district.findMany({
       where,
@@ -1283,14 +1285,48 @@ const getDistricts = async (req, res) => {
  */
 const createDistrict = async (req, res) => {
   try {
-    const { name, type, is_active } = req.body;
-    const existing = await prisma.district.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
-    if (existing) return error(res, 'Tên khu vực phục vụ đã tồn tại', 400);
+    const { province_code, is_active, wards = [] } = req.body;
+    const provinces = await loadProvinces();
+    const province = provinces.find((item) => item.code === province_code);
+    if (!province) return error(res, 'Tỉnh/thành không tồn tại trong API hành chính', 400);
 
-    const district = await prisma.district.create({ data: { name, type, is_active: is_active ?? true } });
+    const existingProvince = await prisma.district.findFirst({ where: { province_code } });
+    if (existingProvince) return error(res, 'Tỉnh/thành này đã được thêm vào khu vực phục vụ', 409);
+
+    const apiWards = await loadProvinceWards(province_code);
+    const apiWardByCode = new Map(apiWards.map((ward) => [ward.code, ward]));
+    const wardCodes = wards.map((ward) => ward.external_code);
+    if (new Set(wardCodes).size !== wardCodes.length) {
+      return error(res, 'Danh sách phường/xã có mã hành chính bị trùng', 400);
+    }
+    if (wardCodes.some((code) => !apiWardByCode.has(code))) {
+      return error(res, 'Danh sách có phường/xã không thuộc tỉnh/thành đã chọn', 400);
+    }
+
+    const district = await prisma.district.create({
+      data: {
+        name: province.name.replace(/^(Tỉnh|Thành phố)\s+/i, ''),
+        province_code,
+        province_name: province.name,
+        is_active,
+        wards: {
+          create: wardCodes.map((code) => {
+            const ward = apiWardByCode.get(code);
+            return {
+              external_code: ward.code,
+              name: ward.name,
+              type: ward.type,
+              is_active,
+            };
+          }),
+        },
+      },
+      include: { wards: true },
+    });
     return success(res, district, 'Tạo khu vực phục vụ thành công', 201);
   } catch (err) {
     console.error('createDistrict error:', err);
+    if (err.code === 'P2002') return error(res, 'Tên khu vực hoặc phường/xã đã tồn tại', 409);
     return error(res, 'Không thể tạo khu vực phục vụ', 500);
   }
 };
@@ -1300,25 +1336,25 @@ const createDistrict = async (req, res) => {
  */
 const updateDistrict = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, type, is_active } = req.body;
+    const id = parseInt(req.params.id, 10);
+    const existing = await prisma.district.findUnique({ where: { id } });
+    if (!existing) return error(res, 'Khu vực phục vụ không tồn tại', 404);
 
-    if (name) {
-      const existing = await prisma.district.findFirst({ where: { name: { equals: name, mode: 'insensitive' }, id: { not: parseInt(id) } } });
-      if (existing) return error(res, 'Tên khu vực phục vụ đã tồn tại', 400);
-    }
+    const district = await prisma.$transaction(async (tx) => {
+      const updated = await tx.district.update({
+        where: { id },
+        data: { is_active: req.body.is_active },
+      });
 
-    const district = await prisma.district.update({
-      where: { id: parseInt(id) },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(type !== undefined && { type }),
-        ...(is_active !== undefined && { is_active }),
-      },
+      if (req.body.is_active === false) {
+        await tx.ward.updateMany({ where: { district_id: id }, data: { is_active: false } });
+      }
+      return updated;
     });
     return success(res, district, 'Cập nhật khu vực phục vụ thành công');
   } catch (err) {
     console.error('updateDistrict error:', err);
+    if (err.code === 'P2002') return error(res, 'Tên khu vực phục vụ đã tồn tại', 409);
     return error(res, 'Không thể cập nhật khu vực phục vụ', 500);
   }
 };
@@ -1349,21 +1385,33 @@ const toggleDistrict = async (req, res) => {
 const createWard = async (req, res) => {
   try {
     const { districtId } = req.params;
-    const { name, type, is_active } = req.body;
+    const { external_code } = req.body;
 
     // Kiểm tra district tồn tại
     const district = await prisma.district.findUnique({ where: { id: parseInt(districtId) } });
     if (!district) return error(res, 'Khu vực phục vụ không tồn tại', 404);
+    if (!district.province_code) return error(res, 'Khu vực chưa có mã tỉnh/thành từ API', 400);
+
+    const apiWards = await loadProvinceWards(district.province_code);
+    const selectedWard = apiWards.find((ward) => ward.code === external_code);
+    if (!selectedWard) return error(res, 'Phường/xã không thuộc tỉnh/thành của khu vực này', 400);
 
     const existing = await prisma.ward.findFirst({ where: { name: { equals: name, mode: 'insensitive' }, district_id: parseInt(districtId) } });
     if (existing) return error(res, 'Tên phường/xã đã tồn tại trong khu vực này', 400);
 
     const ward = await prisma.ward.create({
-      data: { district_id: parseInt(districtId), name, type, is_active: is_active ?? true },
+      data: {
+        district_id: parseInt(districtId),
+        external_code: selectedWard.code,
+        name: selectedWard.name,
+        type: selectedWard.type,
+        is_active: district.is_active,
+      },
     });
     return success(res, ward, 'Tạo phường/xã thành công', 201);
   } catch (err) {
     console.error('createWard error:', err);
+    if (err.code === 'P2002') return error(res, 'Phường/xã đã tồn tại hoặc đã thuộc khu vực khác', 409);
     return error(res, 'Không thể tạo phường/xã', 500);
   }
 };
@@ -1373,28 +1421,24 @@ const createWard = async (req, res) => {
  */
 const updateWard = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, type, is_active } = req.body;
-    
-    const currentWard = await prisma.ward.findUnique({ where: { id: parseInt(id) } });
-    if (!currentWard) return error(res, 'Phường/xã không tồn tại', 404);
-
-    if (name) {
-       const existing = await prisma.ward.findFirst({ where: { name: { equals: name, mode: 'insensitive' }, district_id: currentWard.district_id, id: { not: parseInt(id) } } });
-       if (existing) return error(res, 'Tên phường/xã đã tồn tại trong khu vực này', 400);
+    const id = parseInt(req.params.id, 10);
+    const { is_active } = req.body;
+    const existing = await prisma.ward.findUnique({
+      where: { id },
+      include: { district: { select: { is_active: true } } },
+    });
+    if (!existing) return error(res, 'Phường/xã không tồn tại', 404);
+    if (is_active === true && !existing.district.is_active) {
+      return error(res, 'Không thể kích hoạt phường/xã khi khu vực phục vụ đang tắt', 400);
     }
-
     const ward = await prisma.ward.update({
-      where: { id: parseInt(id) },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(type !== undefined && { type }),
-        ...(is_active !== undefined && { is_active }),
-      },
+      where: { id },
+      data: { is_active },
     });
     return success(res, ward, 'Cập nhật phường/xã thành công');
   } catch (err) {
     console.error('updateWard error:', err);
+    if (err.code === 'P2002') return error(res, 'Phường/xã đã tồn tại hoặc đã thuộc khu vực khác', 409);
     return error(res, 'Không thể cập nhật phường/xã', 500);
   }
 };
@@ -1435,7 +1479,7 @@ const deleteDistrict = async (req, res) => {
     ]);
 
     if (wardCount > 0 || bookingCount > 0 || addressCount > 0 || technicianCount > 0) {
-      return error(res, 'Không thể xóa khu vực đang có phường/xã, địa chỉ, đơn hàng hoặc kỹ thuật viên liên quan', 400);
+      return error(res, 'Không thể xóa tỉnh/thành đang có phường/xã, địa chỉ, đơn hàng hoặc kỹ thuật viên liên quan', 400);
     }
 
     await prisma.district.delete({ where: { id: districtId } });
@@ -1751,6 +1795,201 @@ const confirmCashSettlement = async (req, res) => {
   } catch (err) {
     console.error('confirmCashSettlement error:', err);
     return error(res, 'Không thể xác nhận bàn giao tiền mặt', 500);
+  }
+};
+
+const getTechnicianWallets = async (req, res) => {
+  try {
+    const payments = await prisma.payment.findMany({
+      where: {
+        method: PAYMENT_METHOD.CASH,
+        status: PAYMENT_STATUS.PAID,
+        booking: { technician_profile_id: { not: null } },
+      },
+      include: {
+        booking: {
+          select: {
+            booking_date: true,
+            customer: { select: { full_name: true, phone: true } },
+            service: { select: { name: true } },
+            technicianProfile: {
+              select: {
+                id: true,
+                user: {
+                  select: {
+                    id: true,
+                    full_name: true,
+                    phone: true,
+                    email: true,
+                    avatar_url: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ paid_at: 'desc' }, { id: 'desc' }],
+    });
+
+    const walletsByTechnician = new Map();
+
+    payments.forEach((payment) => {
+      const profile = payment.booking.technicianProfile;
+      if (!profile) return;
+
+      if (!walletsByTechnician.has(profile.id)) {
+        walletsByTechnician.set(profile.id, {
+          id: profile.id,
+          user_id: profile.user.id,
+          full_name: profile.user.full_name,
+          phone: profile.user.phone,
+          email: profile.user.email,
+          avatar_url: profile.user.avatar_url,
+          total_collected: 0,
+          total_settled: 0,
+          total_pending: 0,
+          payments: [],
+        });
+      }
+
+      const wallet = walletsByTechnician.get(profile.id);
+      const amount = Number(payment.amount);
+      wallet.total_collected += amount;
+      if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.SETTLED) {
+        wallet.total_settled += amount;
+      }
+      if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.PENDING) {
+        wallet.total_pending += amount;
+      }
+      wallet.payments.push({
+        id: payment.id,
+        booking_id: payment.booking_id,
+        service_name: payment.booking.service.name,
+        customer_name: payment.booking.customer.full_name,
+        customer_phone: payment.booking.customer.phone,
+        booking_date: payment.booking.booking_date,
+        amount,
+        paid_at: payment.paid_at,
+        settlement_status: payment.settlement_status,
+        settlement_note: payment.settlement_note,
+      });
+    });
+
+    const wallets = Array.from(walletsByTechnician.values()).sort((left, right) => (
+      right.total_pending - left.total_pending
+      || left.full_name.localeCompare(right.full_name, 'vi')
+    ));
+
+    return success(res, wallets);
+  } catch (err) {
+    console.error('getTechnicianWallets error:', err);
+    return error(res, 'Khong the tai danh sach vi tien mat cua ky thuat vien', 500);
+  }
+};
+
+const confirmCashSettlementBatch = async (req, res) => {
+  try {
+    const rawPaymentIds = Array.isArray(req.body?.paymentIds) ? req.body.paymentIds : [];
+    const paymentIds = [...new Set(rawPaymentIds.map((id) => Number(id)))];
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim() : '';
+
+    if (
+      paymentIds.length === 0
+      || paymentIds.length > 100
+      || paymentIds.some((id) => !Number.isInteger(id) || id <= 0)
+    ) {
+      return error(res, 'Danh sach giao dich khong hop le (toi da 100 giao dich)', 400);
+    }
+    if (note.length > 500) {
+      return error(res, 'Ghi chu doi soat khong duoc vuot qua 500 ky tu', 400);
+    }
+
+    const payments = await prisma.payment.findMany({
+      where: { id: { in: paymentIds } },
+      include: {
+        booking: {
+          select: {
+            id: true,
+            technician_profile_id: true,
+            technicianProfile: { select: { user_id: true } },
+          },
+        },
+      },
+    });
+
+    if (payments.length !== paymentIds.length) {
+      return error(res, 'Co giao dich khong ton tai', 404);
+    }
+    if (payments.some((payment) => (
+      payment.method !== PAYMENT_METHOD.CASH
+      || payment.status !== PAYMENT_STATUS.PAID
+      || payment.settlement_status !== PAYMENT_SETTLEMENT_STATUS.PENDING
+    ))) {
+      return error(res, 'Chi duoc doi soat tien mat da thu va dang cho ban giao', 409);
+    }
+
+    const technicianProfileIds = new Set(
+      payments.map((payment) => payment.booking.technician_profile_id).filter(Boolean),
+    );
+    if (technicianProfileIds.size !== 1 || payments.some((payment) => !payment.booking.technician_profile_id)) {
+      return error(res, 'Moi lan doi soat chi duoc chon giao dich cua mot ky thuat vien', 400);
+    }
+
+    const settledAt = new Date();
+    const settlementNote = note || `Admin xac nhan da nhan du tien mat cua ${paymentIds.length} giao dich`;
+    await prisma.$transaction(async (tx) => {
+      const updateResult = await tx.payment.updateMany({
+        where: {
+          id: { in: paymentIds },
+          method: PAYMENT_METHOD.CASH,
+          status: PAYMENT_STATUS.PAID,
+          settlement_status: PAYMENT_SETTLEMENT_STATUS.PENDING,
+        },
+        data: {
+          settlement_status: PAYMENT_SETTLEMENT_STATUS.SETTLED,
+          settled_at: settledAt,
+          settled_by: req.user.id,
+          settlement_note: settlementNote,
+        },
+      });
+
+      if (updateResult.count !== paymentIds.length) {
+        const conflict = new Error('CASH_SETTLEMENT_CONFLICT');
+        conflict.code = 'CASH_SETTLEMENT_CONFLICT';
+        throw conflict;
+      }
+    });
+
+    const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const technicianUserId = payments[0].booking.technicianProfile?.user_id;
+    if (technicianUserId) {
+      try {
+        await prisma.notification.create({
+          data: {
+            user_id: technicianUserId,
+            title: 'Da doi soat tien mat',
+            message: `HomeFix da xac nhan nhan du ${totalAmount.toLocaleString('vi-VN')}d cua ${paymentIds.length} giao dich.`,
+            type: NOTIFICATION_TYPE.PAYMENT,
+          },
+        });
+      } catch (notificationError) {
+        console.error('Cash settlement batch notification error:', notificationError);
+      }
+    }
+
+    return success(res, {
+      payment_ids: paymentIds,
+      payment_count: paymentIds.length,
+      total_amount: totalAmount,
+      settled_at: settledAt,
+    }, 'Xac nhan doi soat lo tien mat thanh cong');
+  } catch (err) {
+    if (err.code === 'CASH_SETTLEMENT_CONFLICT') {
+      return error(res, 'Mot hoac nhieu giao dich vua duoc Admin khac doi soat', 409);
+    }
+    console.error('confirmCashSettlementBatch error:', err);
+    return error(res, 'Khong the xac nhan doi soat lo tien mat', 500);
   }
 };
 
@@ -2222,7 +2461,8 @@ module.exports = {
   // Voucher CRUD
   getVouchers, createVoucher, updateVoucher, toggleVoucher, getVoucherUsages,
   // Payment & Complaint
-  getPayments, getPaymentDetail, confirmCashSettlement, getComplaints, resolveComplaint,
+  getPayments, getPaymentDetail, confirmCashSettlement, getTechnicianWallets,
+  confirmCashSettlementBatch, getComplaints, resolveComplaint,
   // Dashboard
   getDashboard, getRevenueReport,
 };

@@ -15,6 +15,7 @@ const {
   updateJobStatus,
   createQuotation,
   confirmCashPayment,
+  getMyCashWallet,
   getMySchedule,
   getJobHistory,
   getMyRating,
@@ -36,6 +37,7 @@ router.post('/jobs/:id/quotation', validate(createQuotationSchema), createQuotat
 router.put('/jobs/:id/confirm-cash', confirmCashPayment);
 
 // Schedule & Stats
+router.get('/cash-wallet', getMyCashWallet);
 router.get('/schedule', getMySchedule);
 router.get('/rating', getMyRating);
 

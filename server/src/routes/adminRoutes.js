@@ -24,6 +24,7 @@ const {
 } = require('../middlewares/validators');
 
 const admin = require('../controllers/adminController');
+const administrative = require('../controllers/administrativeController');
 
 // ========================
 // Middleware: Tất cả routes đều cần ADMIN
@@ -84,14 +85,14 @@ router.delete('/device-types/:id', admin.deleteDeviceType);
 // ========================
 // DISTRICT & WARD
 // ========================
+router.get('/administrative/provinces', administrative.getProvinces);
+router.get('/administrative/provinces/:code/wards', administrative.getProvinceWards);
 router.get('/districts', admin.getDistricts);
 router.post('/districts', validate(createDistrictSchema), admin.createDistrict);
 router.put('/districts/:id', validate(updateDistrictSchema), admin.updateDistrict);
-router.put('/districts/:id/toggle', admin.toggleDistrict);
 router.delete('/districts/:id', admin.deleteDistrict);
 router.post('/districts/:districtId/wards', validate(createWardSchema), admin.createWard);
 router.put('/wards/:id', validate(updateWardSchema), admin.updateWard);
-router.put('/wards/:id/toggle', admin.toggleWard);
 router.delete('/wards/:id', admin.deleteWard);
 
 // ========================
@@ -107,6 +108,8 @@ router.get('/vouchers/:id/usages', admin.getVoucherUsages);
 // PAYMENT & COMPLAINT
 // ========================
 router.get('/payments', admin.getPayments);
+router.get('/payments/technician-wallets', admin.getTechnicianWallets);
+router.put('/payments/confirm-cash-settlement-batch', admin.confirmCashSettlementBatch);
 router.get('/payments/:id', admin.getPaymentDetail);
 router.put('/payments/:id/confirm-cash-settlement', admin.confirmCashSettlement);
 router.get('/complaints', admin.getComplaints);

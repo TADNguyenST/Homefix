@@ -59,65 +59,34 @@ async function main() {
     );
   }
 
-  // 3. Seed service areas & wards (Cần Thơ mới sau sắp xếp cấp xã năm 2025)
-  // Schema hiện vẫn dùng District/Ward; District ở đây được hiểu là "khu vực phục vụ".
-  const districtsData = [
-    {
-      name: 'Khu vực Cần Thơ trung tâm',
-      type: 'CENTER',
-      wards: [
-        ['Ninh Kiều', 'PHUONG'], ['Cái Khế', 'PHUONG'], ['Tân An', 'PHUONG'], ['An Bình', 'PHUONG'],
-        ['Thới An Đông', 'PHUONG'], ['Bình Thủy', 'PHUONG'], ['Long Tuyền', 'PHUONG'], ['Cái Răng', 'PHUONG'],
-        ['Hưng Phú', 'PHUONG'], ['Ô Môn', 'PHUONG'], ['Phước Thới', 'PHUONG'], ['Thới Long', 'PHUONG'],
-        ['Trung Nhứt', 'PHUONG'], ['Thuận Hưng', 'PHUONG'], ['Thốt Nốt', 'PHUONG'], ['Tân Lộc', 'PHUONG'],
-        ['Phong Điền', 'XA'], ['Nhơn Ái', 'XA'], ['Thới Lai', 'XA'], ['Đông Thuận', 'XA'],
-        ['Trường Xuân', 'XA'], ['Trường Thành', 'XA'], ['Cờ Đỏ', 'XA'], ['Đông Hiệp', 'XA'],
-        ['Trung Hưng', 'XA'], ['Vĩnh Thạnh', 'XA'], ['Vĩnh Trinh', 'XA'], ['Thạnh An', 'XA'],
-        ['Thạnh Quới', 'XA'], ['Trường Long', 'XA'],
-      ],
-    },
-    {
-      name: 'Khu vực Hậu Giang',
-      type: 'SUBURB',
-      wards: [
-        ['Vị Thanh', 'PHUONG'], ['Vị Tân', 'PHUONG'], ['Long Bình', 'PHUONG'], ['Long Mỹ', 'PHUONG'],
-        ['Long Phú 1', 'PHUONG'], ['Đại Thành', 'PHUONG'], ['Ngã Bảy', 'PHUONG'],
-        ['Hỏa Lựu', 'XA'], ['Vị Thủy', 'XA'], ['Vĩnh Thuận Đông', 'XA'], ['Vị Thanh 1', 'XA'],
-        ['Vĩnh Tường', 'XA'], ['Vĩnh Viễn', 'XA'], ['Xà Phiên', 'XA'], ['Lương Tâm', 'XA'],
-        ['Thạnh Xuân', 'XA'], ['Tân Hòa', 'XA'], ['Trường Long Tây', 'XA'], ['Châu Thành', 'XA'],
-        ['Đông Phước', 'XA'], ['Phú Hữu', 'XA'], ['Tân Bình', 'XA'], ['Hòa An', 'XA'],
-        ['Phương Bình', 'XA'], ['Tân Phước Hưng', 'XA'], ['Hiệp Hưng', 'XA'], ['Phụng Hiệp', 'XA'],
-        ['Thạnh Hòa', 'XA'], ['Thạnh Phú', 'XA'], ['Thới Hưng', 'XA'],
-      ],
-    },
-    {
-      name: 'Khu vực Sóc Trăng',
-      type: 'SUBURB',
-      wards: [
-        ['Phú Lợi', 'PHUONG'], ['Sóc Trăng', 'PHUONG'], ['Mỹ Xuyên', 'PHUONG'], ['Vĩnh Phước', 'PHUONG'],
-        ['Vĩnh Châu', 'PHUONG'], ['Khánh Hòa', 'PHUONG'], ['Ngã Năm', 'PHUONG'], ['Mỹ Quới', 'PHUONG'],
-        ['Hòa Tú', 'XA'], ['Gia Hòa', 'XA'], ['Nhu Gia', 'XA'], ['Ngọc Tố', 'XA'],
-        ['Trường Khánh', 'XA'], ['Đại Ngãi', 'XA'], ['Tân Thạnh', 'XA'], ['Long Phú', 'XA'],
-        ['Nhơn Mỹ', 'XA'], ['An Lạc Thôn', 'XA'], ['Kế Sách', 'XA'], ['Thới An Hội', 'XA'],
-        ['Đại Hải', 'XA'], ['Phú Tâm', 'XA'], ['An Ninh', 'XA'], ['Thuận Hòa', 'XA'],
-        ['Hồ Đắc Kiện', 'XA'], ['Mỹ Tú', 'XA'], ['Long Hưng', 'XA'], ['Mỹ Hương', 'XA'],
-        ['Tân Long', 'XA'], ['Phú Lộc', 'XA'], ['Vĩnh Lợi', 'XA'], ['Lâm Tân', 'XA'],
-        ['Thạnh Thới An', 'XA'], ['Tài Văn', 'XA'], ['Liêu Tú', 'XA'], ['Lịch Hội Thượng', 'XA'],
-        ['Trần Đề', 'XA'], ['An Thạnh', 'XA'], ['Cù Lao Dung', 'XA'], ['Phong Nẫm', 'XA'],
-        ['Mỹ Phước', 'XA'], ['Lai Hòa', 'XA'], ['Vĩnh Hải', 'XA'],
-      ],
-    },
-  ];
-
+  // 3. Seed tỉnh/thành và phường/xã theo API địa giới hành chính v2.
   const districts = [];
   const wards = [];
-  for (const d of districtsData) {
-    const district = await prisma.district.create({ data: { name: d.name, type: d.type } });
-    districts.push(district);
-    for (const [name, type] of d.wards) {
-      const ward = await prisma.ward.create({ data: { district_id: district.id, name, type } });
-      wards.push(ward);
-    }
+  const district = await prisma.district.create({
+    data: {
+      name: 'Cần Thơ',
+      province_code: 92,
+      province_name: 'Thành phố Cần Thơ',
+      is_active: true,
+    },
+  });
+  districts.push(district);
+  const wardResponse = await fetch('https://provinces.open-api.vn/api/v2/w/?province=92');
+  if (!wardResponse.ok) throw new Error('Không thể tải dữ liệu phường/xã Cần Thơ từ API hành chính');
+  const apiWards = await wardResponse.json();
+  for (const item of apiWards) {
+    const normalizedType = item.division_type.toLowerCase().includes('phường')
+      ? 'PHUONG'
+      : item.division_type.toLowerCase().includes('đặc khu') ? 'DAC_KHU' : 'XA';
+    const ward = await prisma.ward.create({
+      data: {
+        district_id: district.id,
+        external_code: item.code,
+        name: item.name,
+        type: normalizedType,
+      },
+    });
+    wards.push(ward);
   }
 
   // 4. Seed Service Categories & Services
