@@ -15,7 +15,12 @@ const {
   ROLES,
   NOTIFICATION_TYPE,
 } = require('../config/constants');
-const { notifyBookingCreated, notifyBookingRescheduled } = require('../services/notificationService');
+const { 
+  notifyBookingCreated, 
+  notifyBookingRescheduled, 
+  notifyBookingCancelled, 
+  notifyBookingCancelledToAdmins 
+} = require('../services/notificationService');
 const { calculateVoucherDiscount } = require('../utils/pricing');
 
 const getTodayDateOnly = () => {
@@ -489,6 +494,37 @@ const cancelBooking = async (req, res) => {
         }
       }
     });
+
+    try {
+      const customer = await prisma.user.findUnique({
+        where: { id: booking.customer_id },
+        select: { full_name: true },
+      });
+      const customerName = customer?.full_name || 'Khách hàng';
+
+      // Notify technician if assigned
+      if (booking.technician_profile_id) {
+        const techProfile = await prisma.technicianProfile.findUnique({
+          where: { id: booking.technician_profile_id },
+          select: { user_id: true },
+        });
+        if (techProfile) {
+          await notifyBookingCancelled(techProfile.user_id, bookingId, customerName);
+        }
+      }
+
+      // Notify admins
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN', is_active: true },
+        select: { id: true },
+      });
+      const adminIds = admins.map(a => a.id);
+      if (adminIds.length > 0) {
+        await notifyBookingCancelledToAdmins(adminIds, bookingId, customerName);
+      }
+    } catch (notifErr) {
+      console.error('Failed to send cancel booking notifications:', notifErr.message);
+    }
 
     return success(res, null, 'Hủy đơn thành công');
   } catch (err) {

@@ -96,3 +96,46 @@ export const stripHtmlAndTruncate = (html, maxLength = 150) => {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
 };
+
+/**
+ * Trả về URL chi tiết tương ứng với thông báo
+ * @param {object} notification 
+ * @param {string} userRole - CUSTOMER | TECHNICIAN | ADMIN
+ * @returns {string|null} Đường dẫn cần chuyển hướng
+ */
+export const getNotificationRedirectUrl = (notification, userRole) => {
+  const { type, reference_id } = notification;
+  if (!reference_id) return null;
+
+  switch (type) {
+    case 'BOOKING':
+    case 'PAYMENT':
+      if (userRole === 'CUSTOMER') return `/customer/bookings/${reference_id}`;
+      if (userRole === 'TECHNICIAN') return `/technician/jobs/${reference_id}`;
+      if (userRole === 'ADMIN') {
+        if (type === 'PAYMENT') return `/admin/payments/${reference_id}`;
+        return `/admin/bookings`;
+      }
+      break;
+
+    case 'QUOTATION':
+      if (userRole === 'CUSTOMER') return `/customer/quotations/${reference_id}`;
+      if (userRole === 'TECHNICIAN') return `/technician/jobs/${reference_id}`;
+      break;
+
+    case 'REVIEW':
+      if (userRole === 'TECHNICIAN') return `/technician/rating`;
+      if (userRole === 'ADMIN') return `/admin/bookings`;
+      break;
+
+    case 'COMPLAINT':
+      if (userRole === 'CUSTOMER') return `/customer/complaints`;
+      if (userRole === 'ADMIN') return `/admin/complaints`;
+      break;
+
+    default:
+      return null;
+  }
+  return null;
+};
+

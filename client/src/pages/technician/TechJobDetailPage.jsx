@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Card, Steps, Button, Typography, Tag, Descriptions, Space, Spin, message, Divider, Modal, Alert } from 'antd';
-import { EnvironmentOutlined, PhoneOutlined, UserOutlined, FormOutlined } from '@ant-design/icons';
+import { Card, Steps, Button, Typography, Tag, Descriptions, Space, Spin, message, Divider, Modal, Alert, Form, Input, Upload, Image } from 'antd';
+import { EnvironmentOutlined, PhoneOutlined, UserOutlined, FormOutlined, UploadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { technicianApi } from '../../api/technicianApi';
+import { uploadApi } from '../../api/bookingApi';
 import { useParams, useNavigate } from 'react-router-dom';
 import { formatVND, formatDate, formatDateTime } from '../../utils/helpers';
 import { BOOKING_STATUS_STEPS, BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS } from '../../utils/constants';
@@ -18,6 +19,10 @@ export default function TechJobDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loadingAction, setLoadingAction] = useState(false);
+  const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
+  const [completionNote, setCompletionNote] = useState('');
+  const [fileList, setFileList] = useState([]);
+  const [uploading, setUploading] = useState(false);
 
   const { data: jobData, isLoading, refetch } = useQuery({
     queryKey: ['tech-job', id],
@@ -44,6 +49,17 @@ export default function TechJobDetailPage() {
   const payableAmount = currentQuotation
     ? Math.max(0, quotationSubtotal - discountAmount)
     : toNumber(job.final_price ?? job.payment?.amount ?? job.estimated_price);
+
+  const customerImages = job.images?.filter(img => img.uploaded_by === 'CUSTOMER') || [];
+  const technicianImages = job.images?.filter(img => img.uploaded_by === 'TECHNICIAN') || [];
+  const completionHistory = job.statusHistories?.find(h => h.to_status === 'AWAITING_PAYMENT');
+  const completionNoteText = completionHistory?.note;
+
+  const resolveImageUrl = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    return `http://localhost:5000${url}`;
+  };
 
   const handleUpdateStatus = async (newStatus) => {
     try {
@@ -72,6 +88,45 @@ export default function TechJobDetailPage() {
         }
       }
     });
+  };
+
+  const handleSubmitCompletion = async () => {
+    if (!completionNote.trim()) {
+      message.error('Vui lòng nhập ghi chú bàn giao / biên bản nghiệm thu');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const uploadedImageUrls = [];
+
+      // 1. Tải ảnh lên tuần tự
+      if (fileList.length > 0) {
+        for (const file of fileList) {
+          const uploadResult = await uploadApi.image(file.originFileObj);
+          if (uploadResult.data?.url) {
+            uploadedImageUrls.push(uploadResult.data.url);
+          }
+        }
+      }
+
+      // 2. Gọi API cập nhật trạng thái kèm ảnh và ghi chú
+      await technicianApi.updateJobStatus(id, {
+        new_status: 'AWAITING_PAYMENT',
+        note: completionNote,
+        image_urls: uploadedImageUrls,
+      });
+
+      message.success('Đã báo cáo hoàn thành sửa chữa thành công');
+      setIsCompletionModalOpen(false);
+      setCompletionNote('');
+      setFileList([]);
+      refetch();
+    } catch (err) {
+      message.error(err.message || 'Lỗi khi báo cáo hoàn thành');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const renderActionButtons = () => {
@@ -144,7 +199,7 @@ export default function TechJobDetailPage() {
         );
       case 'COMPLETING':
         return (
-          <Button type="primary" onClick={() => handleUpdateStatus('AWAITING_PAYMENT')} loading={loadingAction}>
+          <Button type="primary" onClick={() => setIsCompletionModalOpen(true)}>
             Hoàn thành sửa chữa
           </Button>
         );
@@ -247,6 +302,53 @@ export default function TechJobDetailPage() {
               )}
             </Card>
           )}
+
+          {customerImages.length > 0 && (
+            <Card title="Hình ảnh sự cố (Khách hàng cung cấp)" className="glass-card">
+              <Image.PreviewGroup>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                  {customerImages.map(image => (
+                    <Image
+                      key={image.id}
+                      src={resolveImageUrl(image.image_url)}
+                      alt="Incident evidence"
+                      style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8 }}
+                    />
+                  ))}
+                </div>
+              </Image.PreviewGroup>
+            </Card>
+          )}
+
+          {(technicianImages.length > 0 || completionNoteText) && (
+            <Card title="Biên bản nghiệm thu & Ảnh sau sửa" className="glass-card" styles={{ body: { padding: 24 } }} style={{ border: '1px solid var(--success-border)', background: '#f8fafc' }}>
+              {completionNoteText && (
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong style={{ display: 'block', marginBottom: 6, color: 'var(--navy)' }}>Ghi chú bàn giao nghiệm thu:</Text>
+                  <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0', fontStyle: 'italic', color: 'var(--text-primary)' }}>
+                    "{completionNoteText}"
+                  </div>
+                </div>
+              )}
+              {technicianImages.length > 0 && (
+                <div>
+                  <Text strong style={{ display: 'block', marginBottom: 8, color: 'var(--navy)' }}>Hình ảnh nghiệm thu thực tế:</Text>
+                  <Image.PreviewGroup>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 }}>
+                      {technicianImages.map(image => (
+                        <Image
+                          key={image.id}
+                          src={resolveImageUrl(image.image_url)}
+                          alt="Repair completion evidence"
+                          style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8 }}
+                        />
+                      ))}
+                    </div>
+                  </Image.PreviewGroup>
+                </div>
+              )}
+            </Card>
+          )}
         </Space>
 
         <Space direction="vertical" size="large" style={{ display: 'flex' }}>
@@ -278,6 +380,64 @@ export default function TechJobDetailPage() {
           </Card>
         </Space>
       </div>
+
+      <Modal
+        title="Báo cáo hoàn thành sửa chữa"
+        open={isCompletionModalOpen}
+        confirmLoading={uploading}
+        onOk={handleSubmitCompletion}
+        onCancel={() => {
+          if (!uploading) {
+            setIsCompletionModalOpen(false);
+            setCompletionNote('');
+            setFileList([]);
+          }
+        }}
+        okText="Xác nhận hoàn thành"
+        cancelText="Hủy"
+        destroyOnClose
+      >
+        <div style={{ margin: '16px 0' }}>
+          <Text type="secondary">
+            Vui lòng nhập ghi chú nghiệm thu và tải lên hình ảnh nghiệm thu thực tế sau khi đã sửa chữa xong thiết bị.
+          </Text>
+        </div>
+        
+        <Form layout="vertical">
+          <Form.Item 
+            label="Ghi chú bàn giao / Biên bản nghiệm thu" 
+            required 
+            help="Mô tả công việc đã thực hiện, linh kiện thay thế nếu có..."
+          >
+            <Input.TextArea
+              rows={4}
+              value={completionNote}
+              onChange={(e) => setCompletionNote(e.target.value)}
+              placeholder="Ví dụ: Đã vệ sinh sạch sẽ máy lạnh, nạp gas và sửa bo mạch điều khiển. Máy chạy mát, chạy êm và không còn chảy nước..."
+              disabled={uploading}
+            />
+          </Form.Item>
+
+          <Form.Item label="Hình ảnh sau sửa chữa (Tối đa 3 ảnh)">
+            <Upload
+              listType="picture-card"
+              fileList={fileList}
+              onChange={({ fileList: newFileList }) => setFileList(newFileList)}
+              beforeUpload={() => false}
+              maxCount={3}
+              accept="image/*"
+              disabled={uploading}
+            >
+              {fileList.length >= 3 ? null : (
+                <div>
+                  <UploadOutlined />
+                  <div style={{ marginTop: 8 }}>Tải ảnh lên</div>
+                </div>
+              )}
+            </Upload>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

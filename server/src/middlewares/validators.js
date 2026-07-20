@@ -124,6 +124,7 @@ const updateJobStatusSchema = z.object({
     errorMap: () => ({ message: 'Trạng thái hợp lệ: INSPECTING, COMPLETING, AWAITING_PAYMENT' }),
   }),
   note: z.string().max(1000).optional().nullable(),
+  image_urls: z.array(z.string()).optional().nullable(),
 });
 
 // ========================

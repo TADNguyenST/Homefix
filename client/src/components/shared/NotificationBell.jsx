@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { notificationApi } from '../../api/bookingApi'; // Notification is in bookingApi or we can extract it
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { getNotificationRedirectUrl } from '../../utils/helpers';
 
 export default function NotificationBell() {
   const { user, isAuthenticated } = useAuth();
@@ -34,8 +35,9 @@ export default function NotificationBell() {
       ),
       onClick: async () => {
         await notificationApi.read(noti.id);
-        if (noti.link) {
-          navigate(noti.link);
+        const redirectUrl = getNotificationRedirectUrl(noti, user?.role);
+        if (redirectUrl) {
+          navigate(redirectUrl);
         }
       }
     })),

@@ -12,6 +12,9 @@ const {
 const {
   notifyQuotationSent,
   notifyAwaitingPayment,
+  notifyJobAcceptedByTech,
+  notifyJobRejectedByTech,
+  notifyJobInspecting,
 } = require('../services/notificationService');
 const { completeBookingPayment } = require('../services/paymentCompletionService');
 const { calculatePayableAmount, calculateVoucherDiscount } = require('../utils/pricing');
@@ -166,7 +169,7 @@ const getJobDetail = async (req, res) => {
 
 const acceptJob = async (req, res) => {
   try {
-    const profile = await getMyProfile(req.user.id);
+    const profile = await getMyProfile(req.user.id, { user: true });
     if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
 
     const bookingId = parseInt(req.params.id, 10);
@@ -191,6 +194,12 @@ const acceptJob = async (req, res) => {
       }),
     ]);
 
+    try {
+      await notifyJobAcceptedByTech(booking.customer_id, bookingId, profile.user.full_name);
+    } catch (notifErr) {
+      console.error('Failed to send job accepted notification:', notifErr.message);
+    }
+
     return success(res, null, 'Nhan don thanh cong');
   } catch (err) {
     console.error('Accept job error:', err);
@@ -200,7 +209,7 @@ const acceptJob = async (req, res) => {
 
 const rejectJob = async (req, res) => {
   try {
-    const profile = await getMyProfile(req.user.id);
+    const profile = await getMyProfile(req.user.id, { user: true });
     if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
 
     const bookingId = parseInt(req.params.id, 10);
@@ -229,6 +238,19 @@ const rejectJob = async (req, res) => {
       }),
     ]);
 
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN', is_active: true },
+        select: { id: true },
+      });
+      const adminIds = admins.map(a => a.id);
+      if (adminIds.length > 0) {
+        await notifyJobRejectedByTech(adminIds, bookingId, profile.user.full_name, reason);
+      }
+    } catch (notifErr) {
+      console.error('Failed to send job rejected notification:', notifErr.message);
+    }
+
     return success(res, null, 'Da tu choi don. Admin se phan cong lai.');
   } catch (err) {
     console.error('Reject job error:', err);
@@ -242,7 +264,7 @@ const updateJobStatus = async (req, res) => {
     if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
 
     const bookingId = parseInt(req.params.id, 10);
-    const { new_status, note } = req.body;
+    const { new_status, note, image_urls } = req.body;
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking || booking.technician_profile_id !== profile.id) {
       return error(res, 'Don hang khong ton tai hoac khong thuoc ve ban', 404);
@@ -258,7 +280,7 @@ const updateJobStatus = async (req, res) => {
       return error(res, `Khong the chuyen tu ${booking.status} sang ${new_status}`, 400);
     }
 
-    await prisma.$transaction([
+    const operations = [
       prisma.booking.update({ where: { id: bookingId }, data: { status: new_status } }),
       prisma.bookingStatusHistory.create({
         data: {
@@ -269,9 +291,31 @@ const updateJobStatus = async (req, res) => {
           note: note || `Tho cap nhat trang thai sang ${new_status}`,
         },
       }),
-    ]);
+    ];
+
+    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT && image_urls && image_urls.length > 0) {
+      operations.push(
+        prisma.bookingImage.createMany({
+          data: image_urls.map((url) => ({
+            booking_id: bookingId,
+            image_url: url,
+            uploaded_by: 'TECHNICIAN',
+          })),
+        })
+      );
+    }
+
+    await prisma.$transaction(operations);
     if (new_status === BOOKING_STATUS.AWAITING_PAYMENT) {
       await notifyAwaitingPayment(booking.customer_id, bookingId, booking.payment_method);
+    }
+    if (new_status === BOOKING_STATUS.INSPECTING) {
+      try {
+        const profile = await getMyProfile(req.user.id, { user: true });
+        await notifyJobInspecting(booking.customer_id, bookingId, profile.user.full_name);
+      } catch (notifErr) {
+        console.error('Failed to send job inspecting notification:', notifErr.message);
+      }
     }
 
     return success(res, null, `Cap nhat trang thai thanh ${new_status} thanh cong`);
