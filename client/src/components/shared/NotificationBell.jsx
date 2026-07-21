@@ -1,23 +1,46 @@
-import { Badge, Dropdown, Menu, Spin } from 'antd';
+import { Badge, Dropdown } from 'antd';
 import { BellOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
-import { notificationApi } from '../../api/bookingApi'; // Notification is in bookingApi or we can extract it
-import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { notificationApi } from '../../api/bookingApi';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { getNotificationRedirectUrl } from '../../utils/helpers';
 
 export default function NotificationBell() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const { data: notificationsData, isLoading } = useQuery({
+  const { data: notificationsData } = useQuery({
     queryKey: ['notifications', 'unread'],
-    queryFn: () => notificationApi.getAll({ is_read: false }),
+    queryFn: () => notificationApi.getAll({ is_read: false, limit: 5 }),
     enabled: isAuthenticated,
     refetchInterval: 60000, // Poll every minute
   });
 
   const notifications = notificationsData?.data || [];
-  const unreadCount = notifications.length;
+  const unreadCount = notificationsData?.unread_count || 0;
+
+  const handleMenuClick = async ({ key }) => {
+    if (key === 'header' || key === 'empty') return;
+    if (key === 'view-all') {
+      navigate(user?.role === 'CUSTOMER' ? '/customer/notifications' : (user?.role === 'TECHNICIAN' ? '/technician/notifications' : '/admin/notifications'));
+      return;
+    }
+    const noti = notifications.find(n => String(n.id) === String(key));
+    if (noti) {
+      try {
+        await notificationApi.read(noti.id);
+        await queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      } catch (err) {
+        console.error('Failed to mark read:', err);
+      }
+      const redirectUrl = getNotificationRedirectUrl(noti, user?.role);
+      if (redirectUrl) {
+        navigate(redirectUrl);
+      }
+    }
+  };
 
   const items = [
     {
@@ -32,17 +55,10 @@ export default function NotificationBell() {
           <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>{noti.message}</div>
         </div>
       ),
-      onClick: async () => {
-        await notificationApi.read(noti.id);
-        if (noti.link) {
-          navigate(noti.link);
-        }
-      }
     })),
     {
       key: 'view-all',
       label: <div style={{ textAlign: 'center', color: '#1890ff', padding: '8px 0' }}>Xem tất cả</div>,
-      onClick: () => navigate(user?.role === 'CUSTOMER' ? '/customer/notifications' : (user?.role === 'TECHNICIAN' ? '/technician/notifications' : '/admin/notifications')),
     }
   ];
 
@@ -52,7 +68,7 @@ export default function NotificationBell() {
   }
 
   return (
-    <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+    <Dropdown menu={{ items, onClick: handleMenuClick }} trigger={['click']} placement="bottomRight">
       <Badge count={unreadCount} style={{ cursor: 'pointer' }}>
         <BellOutlined style={{ fontSize: 20, cursor: 'pointer' }} />
       </Badge>

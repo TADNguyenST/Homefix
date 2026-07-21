@@ -15,14 +15,19 @@ export default function CustomerDashboard() {
 
   const { data: bookingsData, isLoading } = useQuery({
     queryKey: ['my-bookings-stats'],
-    queryFn: () => bookingApi.getMyBookings(),
+    queryFn: () => bookingApi.getMyBookings({ include_summary: true }),
   });
 
   const bookings = bookingsData?.data || [];
+  const summary = bookingsData?.summary;
 
   const activeBookings = bookings.filter(b => ['PENDING', 'CONFIRMED', 'ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING', 'AWAITING_PAYMENT'].includes(b.status));
   const completedBookings = bookings.filter(b => b.status === 'COMPLETED');
-  const totalSpent = completedBookings.filter(b => b.payment_status === 'PAID' || b.payment?.status === 'PAID').reduce((sum, b) => sum + (b.final_price || b.total_price || 0), 0);
+  const activeBookingCount = summary?.active_bookings ?? activeBookings.length;
+  const completedBookingCount = summary?.completed_bookings ?? completedBookings.length;
+  const totalSpent = Number(summary?.total_spent ?? completedBookings
+    .filter(b => b.payment?.status === 'PAID')
+    .reduce((sum, b) => sum + Number(b.payment?.amount || b.final_price || 0), 0));
 
   if (isLoading) return <div style={{ textAlign: 'center', padding: '100px 0' }}><Spin size="large" /></div>;
 
@@ -60,7 +65,7 @@ export default function CustomerDashboard() {
           <Card className="hover-card glass-card" styles={{ body: { padding: 24 } }} style={{ borderTop: '4px solid var(--orange)', height: '100%' }}>
             <Statistic
               title={<span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Đơn đang xử lý</span>}
-              value={activeBookings.length}
+              value={activeBookingCount}
               prefix={<CalendarOutlined style={{ color: 'var(--orange)' }} />}
               valueStyle={{ fontSize: 36, fontWeight: 700, marginTop: 8, color: 'var(--navy)' }}
             />
@@ -75,7 +80,7 @@ export default function CustomerDashboard() {
           <Card className="hover-card glass-card" styles={{ body: { padding: 24 } }} style={{ borderTop: '4px solid var(--success)', height: '100%' }}>
             <Statistic
               title={<span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Đơn hoàn thành</span>}
-              value={completedBookings.length}
+              value={completedBookingCount}
               prefix={<CheckCircleOutlined style={{ color: 'var(--success)' }} />}
               valueStyle={{ fontSize: 36, fontWeight: 700, marginTop: 8, color: 'var(--navy)' }}
             />

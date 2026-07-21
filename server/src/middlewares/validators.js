@@ -124,6 +124,26 @@ const updateJobStatusSchema = z.object({
     errorMap: () => ({ message: 'Trạng thái hợp lệ: INSPECTING, COMPLETING, AWAITING_PAYMENT' }),
   }),
   note: z.string().max(1000).optional().nullable(),
+  image_urls: z.array(z.string().min(1).max(500))
+    .max(3, 'Tối đa 3 ảnh sau sửa chữa')
+    .optional()
+    .default([]),
+}).superRefine((data, ctx) => {
+  if (data.new_status === 'AWAITING_PAYMENT' && !data.note?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['note'],
+      message: 'Vui lòng nhập ghi chú bàn giao khi hoàn thành sửa chữa',
+    });
+  }
+
+  if (data.new_status !== 'AWAITING_PAYMENT' && data.image_urls.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['image_urls'],
+      message: 'Chỉ được gửi ảnh khi báo cáo hoàn thành sửa chữa',
+    });
+  }
 });
 
 // ========================
@@ -191,14 +211,16 @@ const createDeviceTypeSchema = z.object({
 });
 
 const createDistrictSchema = z.object({
-  name: z.string().min(2).max(100),
-  type: z.enum(['QUAN', 'HUYEN']),
+  province_code: z.number().int().positive(),
+  is_active: z.boolean().optional().default(true),
+  wards: z.array(z.object({
+    external_code: z.number().int().positive(),
+  })).max(200).optional().default([]),
 });
 
-const createWardSchema = z.object({
-  name: z.string().min(2).max(100),
-  type: z.enum(['PHUONG', 'XA', 'THI_TRAN']),
-});
+const updateDistrictSchema = z.object({ is_active: z.boolean() });
+const createWardSchema = z.object({ external_code: z.number().int().positive() });
+const updateWardSchema = z.object({ is_active: z.boolean() });
 
 const createVoucherSchema = z.object({
   code: z.string().min(3, 'Mã voucher tối thiểu 3 ký tự').max(50).toUpperCase(),
@@ -261,9 +283,7 @@ const assignTechSchema = z.object({
 
 const aiDiagnoseSchema = z.object({
   description: z.string().min(10, 'Mô tả sự cố tối thiểu 10 ký tự').max(2000),
-  base64_image: z.string().optional().nullable(),
-  booking_id: z.number().int().positive().optional().nullable(),
-  image_urls: z.array(z.string().url()).optional().default([]),
+  base64_image: z.string().max(5_000_000, 'Ảnh phân tích quá lớn').optional().nullable(),
 });
 
 // ========================
@@ -314,7 +334,7 @@ module.exports = {
   createComplaintSchema, resolveComplaintSchema,
   // Admin CRUD
   createCategorySchema, createServiceSchema, createDeviceTypeSchema,
-  createDistrictSchema, createWardSchema, createVoucherSchema,
+  createDistrictSchema, updateDistrictSchema, createWardSchema, updateWardSchema, createVoucherSchema,
   createTechnicianSchema, updateTechSkillsSchema, updateTechScheduleSchema,
   assignTechSchema,
   // AI

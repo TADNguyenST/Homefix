@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Typography, Row, Col, Card, Spin, Empty, Input, Select, Button, Space, Pagination } from 'antd';
+import { Typography, Row, Col, Card, Spin, Empty, Input, Select, Button, Pagination } from 'antd';
 import { SearchOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { serviceApi } from '../../api/serviceApi';
 import { useNavigate } from 'react-router-dom';
-import { formatVND } from '../../utils/helpers';
+import { formatVND, resolveAssetUrl } from '../../utils/helpers';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -90,11 +90,13 @@ export default function ServiceListPage() {
                   onClick={() => navigate(`/services/${service.id}`)}
                   cover={
                     service.image_url ? (
-                      <img
-                        alt={service.name}
-                        src={service.image_url}
-                        style={{ height: 200, objectFit: 'cover' }}
-                      />
+                      <div style={{ height: 200, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <img
+                          alt={service.name}
+                          src={resolveAssetUrl(service.image_url)}
+                          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
+                      </div>
                     ) : (
                       <div style={{ height: 200, background: 'var(--navy-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ color: '#fff', opacity: 0.5 }}>Chưa có hình ảnh</Text>
@@ -108,9 +110,9 @@ export default function ServiceListPage() {
                     </div>
                   </div>
                   <Title level={4} style={{ marginBottom: 8, fontSize: 20 }}>{service.name}</Title>
-                  <Text type="secondary" style={{ flex: 1, marginBottom: 24, fontSize: 14 }}>
+                  <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ flex: 1, marginBottom: 24, fontSize: 14 }}>
                     {service.description || 'Chưa có mô tả'}
-                  </Text>
+                  </Typography.Paragraph>
 
                   <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>

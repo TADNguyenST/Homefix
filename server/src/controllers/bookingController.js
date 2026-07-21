@@ -15,7 +15,14 @@ const {
   ROLES,
   NOTIFICATION_TYPE,
 } = require('../config/constants');
-const { notifyBookingCreated, notifyBookingRescheduled } = require('../services/notificationService');
+const { 
+  notifyBookingCreated, 
+  notifyBookingRescheduled, 
+  notifyBookingCancelled, 
+  notifyBookingCancelledToAdmins 
+} = require('../services/notificationService');
+const { calculateVoucherDiscount } = require('../utils/pricing');
+const { getOwnedStorageKey } = require('../services/imageStorageService');
 
 const getTodayDateOnly = () => {
   const now = new Date();
@@ -48,6 +55,10 @@ const createBooking = async (req, res) => {
       ai_diagnosis,
       image_urls = [],
     } = req.body;
+
+    if (image_urls.some((imageUrl) => !getOwnedStorageKey(imageUrl, req.user.id))) {
+      return error(res, 'Anh dat lich khong hop le hoac khong thuoc tai khoan cua ban', 400);
+    }
 
     // 1. Validate service tồn tại và đang active
     const service = await prisma.service.findUnique({ where: { id: service_id } });
@@ -85,9 +96,15 @@ const createBooking = async (req, res) => {
     }
 
     // 3. Validate ward thuộc district
-    const ward = await prisma.ward.findUnique({ where: { id: resolvedWardId } });
+    const ward = await prisma.ward.findUnique({
+      where: { id: resolvedWardId },
+      include: { district: { select: { is_active: true } } },
+    });
     if (!ward || ward.district_id !== resolvedDistrictId) {
       return error(res, 'Phường/xã không thuộc khu vực phục vụ đã chọn', 400);
+    }
+    if (!ward.is_active || !ward.district.is_active) {
+      return error(res, 'Khu vực hoặc phường/xã này đang tạm ngừng nhận lịch', 400);
     }
 
     // 4. Validate ngày đặt lịch (phải trong tương lai, tối thiểu 24h)
@@ -106,6 +123,20 @@ const createBooking = async (req, res) => {
         .map((slot) => `${slot.start} - ${slot.end}`)
         .join(', ');
       return error(res, `Ca làm việc không hợp lệ. Vui lòng chọn một trong các ca: ${validSlots}`, 400);
+    }
+
+    const conflictingBooking = await prisma.booking.findFirst({
+      where: {
+        customer_id: req.user.id,
+        booking_date: new Date(booking_date),
+        status: { notIn: [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED] },
+        time_slot_start: { lt: time_slot_end },
+        time_slot_end: { gt: time_slot_start },
+      },
+      select: { id: true },
+    });
+    if (conflictingBooking) {
+      return error(res, `Bạn đã có đơn #${conflictingBooking.id} trùng ca này`, 409);
     }
 
     // 6. Xử lý voucher
@@ -145,16 +176,7 @@ const createBooking = async (req, res) => {
         return error(res, `Đơn hàng phải có giá trị tối thiểu ${Number(voucher.min_order_amount).toLocaleString('vi-VN')}đ để áp dụng mã`, 400);
       }
 
-      // Tính discount
-      if (voucher.discount_type === 'PERCENTAGE') {
-        discountAmount = Math.floor(basePrice * Number(voucher.discount_value) / 100);
-        if (voucher.max_discount && discountAmount > Number(voucher.max_discount)) {
-          discountAmount = Number(voucher.max_discount);
-        }
-      } else {
-        discountAmount = Number(voucher.discount_value);
-      }
-      discountAmount = Math.min(discountAmount, basePrice);
+      discountAmount = calculateVoucherDiscount(voucher, basePrice);
     }
 
     const estimatedPrice = Math.max(0, Number(service.base_price) - discountAmount);
@@ -195,16 +217,25 @@ const createBooking = async (req, res) => {
 
       // Ghi nhận voucher usage nếu có
       if (voucher) {
+        const reservation = await tx.voucher.updateMany({
+          where: {
+            id: voucher.id,
+            is_active: true,
+            used_count: { lt: voucher.usage_limit },
+          },
+          data: { used_count: { increment: 1 } },
+        });
+        if (reservation.count !== 1) {
+          const unavailableError = new Error('Mã giảm giá vừa hết lượt sử dụng');
+          unavailableError.code = 'VOUCHER_UNAVAILABLE';
+          throw unavailableError;
+        }
         await tx.voucherUsage.create({
           data: {
             voucher_id: voucher.id,
             user_id: req.user.id,
             booking_id: newBooking.id,
           },
-        });
-        await tx.voucher.update({
-          where: { id: voucher.id },
-          data: { used_count: { increment: 1 } },
         });
       }
 
@@ -257,6 +288,9 @@ const createBooking = async (req, res) => {
     return success(res, fullBooking, 'Đặt lịch thành công! Vui lòng chờ Admin xác nhận.', 201);
   } catch (err) {
     console.error('Create booking error:', err);
+    if (err.code === 'VOUCHER_UNAVAILABLE' || err.code === 'P2002') {
+      return error(res, 'Mã giảm giá đã hết lượt hoặc bạn vừa sử dụng mã này ở booking khác', 409);
+    }
     return error(res, 'Đặt lịch thất bại. Vui lòng thử lại.', 500);
   }
 };
@@ -268,11 +302,44 @@ const getMyBookings = async (req, res) => {
   try {
     const { skip, take, page, limit } = getPagination(req.query);
     const { status } = req.query;
+    const includeSummary = req.query.include_summary === 'true';
 
     const where = { customer_id: req.user.id };
     if (status) where.status = status;
 
-    const [bookings, total] = await Promise.all([
+    const activeStatuses = [
+      BOOKING_STATUS.PENDING,
+      BOOKING_STATUS.CONFIRMED,
+      BOOKING_STATUS.ASSIGNED,
+      BOOKING_STATUS.IN_PROGRESS,
+      BOOKING_STATUS.INSPECTING,
+      BOOKING_STATUS.QUOTED,
+      BOOKING_STATUS.COMPLETING,
+      BOOKING_STATUS.AWAITING_PAYMENT,
+    ];
+
+    const summaryPromise = includeSummary
+      ? Promise.all([
+        prisma.booking.count({
+          where: { customer_id: req.user.id, status: { in: activeStatuses } },
+        }),
+        prisma.booking.count({
+          where: { customer_id: req.user.id, status: BOOKING_STATUS.COMPLETED },
+        }),
+        prisma.payment.aggregate({
+          where: {
+            status: PAYMENT_STATUS.PAID,
+            booking: {
+              customer_id: req.user.id,
+              status: BOOKING_STATUS.COMPLETED,
+            },
+          },
+          _sum: { amount: true },
+        }),
+      ])
+      : Promise.resolve(null);
+
+    const [bookings, total, summaryData] = await Promise.all([
       prisma.booking.findMany({
         where,
         include: {
@@ -293,9 +360,20 @@ const getMyBookings = async (req, res) => {
         take,
       }),
       prisma.booking.count({ where }),
+      summaryPromise,
     ]);
 
-    return paginated(res, bookings, total, page, limit);
+    const metadata = summaryData
+      ? {
+        summary: {
+          active_bookings: summaryData[0],
+          completed_bookings: summaryData[1],
+          total_spent: Number(summaryData[2]._sum.amount || 0),
+        },
+      }
+      : {};
+
+    return paginated(res, bookings, total, page, limit, metadata);
   } catch (err) {
     console.error('Get my bookings error:', err);
     return error(res, 'Không thể tải danh sách đơn hàng', 500);
@@ -405,16 +483,48 @@ const cancelBooking = async (req, res) => {
 
       // Refund voucher: giảm used_count nếu booking có voucher
       if (booking.voucher_id) {
-        await tx.voucher.update({
-          where: { id: booking.voucher_id },
-          data: { used_count: { decrement: 1 } },
-        });
-        // Xóa bản ghi sử dụng voucher
-        await tx.voucherUsage.deleteMany({
+        const releasedUsage = await tx.voucherUsage.deleteMany({
           where: { voucher_id: booking.voucher_id, booking_id: bookingId },
         });
+        if (releasedUsage.count > 0) {
+          await tx.voucher.updateMany({
+            where: { id: booking.voucher_id, used_count: { gt: 0 } },
+            data: { used_count: { decrement: 1 } },
+          });
+        }
       }
     });
+
+    try {
+      const customer = await prisma.user.findUnique({
+        where: { id: booking.customer_id },
+        select: { full_name: true },
+      });
+      const customerName = customer?.full_name || 'Khách hàng';
+
+      // Notify technician if assigned
+      if (booking.technician_profile_id) {
+        const techProfile = await prisma.technicianProfile.findUnique({
+          where: { id: booking.technician_profile_id },
+          select: { user_id: true },
+        });
+        if (techProfile) {
+          await notifyBookingCancelled(techProfile.user_id, bookingId, customerName);
+        }
+      }
+
+      // Notify admins
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN', is_active: true },
+        select: { id: true },
+      });
+      const adminIds = admins.map(a => a.id);
+      if (adminIds.length > 0) {
+        await notifyBookingCancelledToAdmins(adminIds, bookingId, customerName);
+      }
+    } catch (notifErr) {
+      console.error('Failed to send cancel booking notifications:', notifErr.message);
+    }
 
     return success(res, null, 'Hủy đơn thành công');
   } catch (err) {
@@ -461,6 +571,21 @@ const rescheduleBooking = async (req, res) => {
         .map((slot) => `${slot.start} - ${slot.end}`)
         .join(', ');
       return error(res, `Ca làm việc không hợp lệ. Vui lòng chọn một trong các ca: ${validSlots}`, 400);
+    }
+
+    const conflictingBooking = await prisma.booking.findFirst({
+      where: {
+        id: { not: bookingId },
+        customer_id: req.user.id,
+        booking_date: new Date(booking_date),
+        status: { notIn: [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED] },
+        time_slot_start: { lt: time_slot_end },
+        time_slot_end: { gt: time_slot_start },
+      },
+      select: { id: true },
+    });
+    if (conflictingBooking) {
+      return error(res, `Bạn đã có đơn #${conflictingBooking.id} trùng ca này`, 409);
     }
 
     // Nếu đơn hàng đã được gán thợ, chúng ta cần gỡ thợ ra và đưa về trạng thái chờ phân công (CONFIRMED)
@@ -547,16 +672,7 @@ const validateVoucher = async (req, res) => {
       return error(res, `Đơn hàng phải có giá trị tối thiểu ${Number(voucher.min_order_amount).toLocaleString('vi-VN')}đ để áp dụng mã`, 400);
     }
 
-    let discountAmount = 0;
-    if (voucher.discount_type === 'PERCENTAGE') {
-      discountAmount = Math.floor(basePrice * Number(voucher.discount_value) / 100);
-      if (voucher.max_discount && discountAmount > Number(voucher.max_discount)) {
-        discountAmount = Number(voucher.max_discount);
-      }
-    } else {
-      discountAmount = Number(voucher.discount_value);
-    }
-    discountAmount = Math.min(discountAmount, basePrice);
+    const discountAmount = calculateVoucherDiscount(voucher, basePrice);
 
     return success(res, {
       code: voucher.code,

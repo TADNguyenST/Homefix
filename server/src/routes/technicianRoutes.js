@@ -7,6 +7,7 @@ const router = express.Router();
 const { authMiddleware, roleMiddleware } = require('../middlewares/authMiddleware');
 const { validate, createQuotationSchema, updateJobStatusSchema } = require('../middlewares/validators');
 const {
+  getAvailableTechnicians,
   getAssignedJobs,
   getJobDetail,
   acceptJob,
@@ -14,10 +15,13 @@ const {
   updateJobStatus,
   createQuotation,
   confirmCashPayment,
+  getMyCashWallet,
   getMySchedule,
   getJobHistory,
   getMyRating,
 } = require('../controllers/technicianController');
+
+router.get('/available', authMiddleware, roleMiddleware(['CUSTOMER']), getAvailableTechnicians);
 
 // Tất cả routes đều yêu cầu TECHNICIAN role
 router.use(authMiddleware, roleMiddleware(['TECHNICIAN']));
@@ -33,6 +37,7 @@ router.post('/jobs/:id/quotation', validate(createQuotationSchema), createQuotat
 router.put('/jobs/:id/confirm-cash', confirmCashPayment);
 
 // Schedule & Stats
+router.get('/cash-wallet', getMyCashWallet);
 router.get('/schedule', getMySchedule);
 router.get('/rating', getMyRating);
 

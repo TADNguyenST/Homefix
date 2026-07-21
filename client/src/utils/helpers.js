@@ -9,6 +9,22 @@ import 'dayjs/locale/vi';
 dayjs.extend(relativeTime);
 dayjs.locale('vi');
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+export const resolveAssetUrl = (rawUrl) => {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return '';
+  const url = rawUrl.trim();
+  if (/^(https?:|data:|blob:)/i.test(url)) return url;
+
+  try {
+    const browserOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const apiOrigin = new URL(API_BASE_URL, browserOrigin).origin;
+    return new URL(url.startsWith('/') ? url : `/${url}`, apiOrigin).toString();
+  } catch {
+    return url;
+  }
+};
+
 /**
  * Format số tiền VND
  * @param {number} amount
@@ -87,3 +103,62 @@ export const getInitials = (name) => {
   if (parts.length === 1) return parts[0][0].toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
+
+export const stripHtmlAndTruncate = (html, maxLength = 150) => {
+  if (!html) return '';
+  const tmp = document.createElement('DIV');
+  tmp.innerHTML = html;
+  const text = tmp.textContent || tmp.innerText || '';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+};
+
+/**
+ * Trả về URL chi tiết tương ứng với thông báo
+ * @param {object} notification 
+ * @param {string} userRole - CUSTOMER | TECHNICIAN | ADMIN
+ * @returns {string|null} Đường dẫn cần chuyển hướng
+ */
+export const getNotificationRedirectUrl = (notification, userRole) => {
+  const { type, reference_id } = notification;
+  if (!reference_id) return null;
+
+  switch (type) {
+    case 'BOOKING':
+    case 'PAYMENT':
+      if (userRole === 'CUSTOMER') {
+        if (notification.title === 'Sửa chữa hoàn thành' || (notification.message && notification.message.includes('đánh giá'))) {
+          return `/customer/reviews/new/${reference_id}`;
+        }
+        return `/customer/bookings/${reference_id}`;
+      }
+      if (userRole === 'TECHNICIAN') return `/technician/jobs/${reference_id}`;
+      if (userRole === 'ADMIN') {
+        // Payment notifications currently store booking_id as reference_id.
+        if (type === 'PAYMENT') return '/admin/payments';
+        return `/admin/bookings`;
+      }
+      break;
+
+    case 'QUOTATION':
+      // Quotation notifications currently store booking_id as reference_id.
+      if (userRole === 'CUSTOMER') return `/customer/bookings/${reference_id}`;
+      if (userRole === 'TECHNICIAN') return `/technician/jobs/${reference_id}`;
+      break;
+
+    case 'REVIEW':
+      if (userRole === 'TECHNICIAN') return `/technician/rating`;
+      if (userRole === 'ADMIN') return `/admin/bookings`;
+      break;
+
+    case 'COMPLAINT':
+      if (userRole === 'CUSTOMER') return `/customer/complaints`;
+      if (userRole === 'ADMIN') return `/admin/complaints`;
+      break;
+
+    default:
+      return null;
+  }
+  return null;
+};
+

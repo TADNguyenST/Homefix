@@ -9,6 +9,17 @@ import { BOOKING_STATUS_COLORS, BOOKING_STATUS_LABELS } from '../../utils/consta
 const { Title, Text } = Typography;
 const { Option } = Select;
 
+const isInspectionBooking = (booking) => (
+  booking?.service?.name?.trim().toLowerCase().startsWith('khảo sát')
+);
+
+const hasMatchingSkill = (technician, booking) => technician.skills?.some((skill) => (
+  skill.service_id === booking?.service_id ||
+  (isInspectionBooking(booking) &&
+    skill.service?.category_id === booking?.service?.category_id &&
+    skill.service?.is_active !== false)
+));
+
 export default function AdminBookingsPage() {
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -97,6 +108,7 @@ export default function AdminBookingsPage() {
     try {
       setLoadingAction(true);
       setRecommendClicked(true);
+      setRecommendedTechs([]);
       const res = await adminApi.recommendTech(selectedBooking.id);
       const suggestions = Array.isArray(res.data)
         ? res.data
@@ -105,8 +117,13 @@ export default function AdminBookingsPage() {
       if (suggestions[0]?.id) {
         setSelectedTechId(suggestions[0].id);
       }
-      message.success('Đã tải gợi ý kỹ thuật viên phù hợp');
+      if (suggestions.length > 0) {
+        message.success(`Đã tìm thấy ${suggestions.length} kỹ thuật viên phù hợp`);
+      } else {
+        message.info('Không có kỹ thuật viên đáp ứng đủ kỹ năng, khu vực và lịch làm việc');
+      }
     } catch (err) {
+      setRecommendedTechs([]);
       message.error(err.message || 'Không thể lấy gợi ý AI');
     } finally {
       setLoadingAction(false);
@@ -201,8 +218,8 @@ export default function AdminBookingsPage() {
 
   const sortedTechnicians = [...technicians].sort((a, b) => {
     if (!selectedBooking) return 0;
-    const aMatchSkill = a.skills?.some(s => s.service_id === selectedBooking.service_id) ? 1 : 0;
-    const bMatchSkill = b.skills?.some(s => s.service_id === selectedBooking.service_id) ? 1 : 0;
+    const aMatchSkill = hasMatchingSkill(a, selectedBooking) ? 1 : 0;
+    const bMatchSkill = hasMatchingSkill(b, selectedBooking) ? 1 : 0;
     if (aMatchSkill !== bMatchSkill) return bMatchSkill - aMatchSkill;
 
     const aMatchDistrict = (a.district_id === selectedBooking.district_id || !a.district_id) ? 1 : 0;
@@ -214,7 +231,7 @@ export default function AdminBookingsPage() {
 
   const getTechOptionLabel = (tech) => {
     if (!selectedBooking) return tech.user?.full_name || '';
-    const isMatchingSkill = tech.skills?.some(s => s.service_id === selectedBooking.service_id);
+    const isMatchingSkill = hasMatchingSkill(tech, selectedBooking);
     const isSameDistrict = tech.district_id === selectedBooking.district_id || !tech.district_id;
     
     let labels = [];
@@ -262,7 +279,7 @@ export default function AdminBookingsPage() {
               <div style={{ background: '#f5f7fa', padding: 12, borderRadius: 8, border: '1px solid #e8e8e8' }}>
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 6 }}>
                   <RobotOutlined style={{ color: '#1890ff', fontSize: 16 }} />
-                  <Text strong style={{ color: '#1890ff' }}>Đề xuất tốt nhất từ AI:</Text>
+                  <Text strong style={{ color: '#1890ff' }}>Đề xuất kỹ thuật viên phù hợp:</Text>
                 </div>
                 <Space direction="vertical" style={{ width: '100%' }} size="small">
                   {recommendedTechs.slice(0, 3).map((tech) => {
@@ -296,6 +313,11 @@ export default function AdminBookingsPage() {
                             {tech.ai_reason}
                           </Text>
                         )}
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {tech.recommendation_source === 'GEMINI_ASSISTED'
+                            ? 'Gemini hỗ trợ xếp hạng sau khi kiểm tra nghiệp vụ'
+                            : 'Xếp hạng theo luật nghiệp vụ'}
+                        </Text>
                       </div>
                     );
                   })}

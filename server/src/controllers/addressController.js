@@ -15,7 +15,7 @@ const getMyAddresses = async (req, res) => {
     const addresses = await prisma.customerAddress.findMany({
       where: { customer_id: req.user.id },
       include: {
-        district: { select: { id: true, name: true, type: true } },
+        district: { select: { id: true, name: true, province_code: true, province_name: true } },
         ward: { select: { id: true, name: true, type: true } },
       },
       orderBy: [
@@ -48,9 +48,15 @@ const createAddress = async (req, res) => {
     }
 
     // Kiểm tra ward thuộc district
-    const ward = await prisma.ward.findUnique({ where: { id: ward_id } });
+    const ward = await prisma.ward.findUnique({
+      where: { id: ward_id },
+      include: { district: { select: { is_active: true } } },
+    });
     if (!ward || ward.district_id !== district_id) {
       return error(res, 'Phường/xã không thuộc khu vực phục vụ đã chọn', 400);
+    }
+    if (!ward.is_active || !ward.district.is_active) {
+      return error(res, 'Khu vực hoặc phường/xã này đang tạm ngừng phục vụ', 400);
     }
 
     // Nếu chưa có địa chỉ nào thì tự động set mặc định
@@ -75,7 +81,7 @@ const createAddress = async (req, res) => {
           is_default: shouldBeDefault,
         },
         include: {
-          district: { select: { id: true, name: true, type: true } },
+          district: { select: { id: true, name: true, province_code: true, province_name: true } },
           ward: { select: { id: true, name: true, type: true } },
         },
       });
@@ -110,9 +116,15 @@ const updateAddress = async (req, res) => {
       const effectiveWardId = ward_id ?? existing.ward_id;
       const effectiveDistrictId = district_id ?? existing.district_id;
 
-      const ward = await prisma.ward.findUnique({ where: { id: effectiveWardId } });
+      const ward = await prisma.ward.findUnique({
+        where: { id: effectiveWardId },
+        include: { district: { select: { is_active: true } } },
+      });
       if (!ward || ward.district_id !== effectiveDistrictId) {
         return error(res, 'Phường/xã không thuộc khu vực phục vụ đã chọn', 400);
+      }
+      if (!ward.is_active || !ward.district.is_active) {
+        return error(res, 'Khu vực hoặc phường/xã này đang tạm ngừng phục vụ', 400);
       }
     }
 
@@ -134,7 +146,7 @@ const updateAddress = async (req, res) => {
           ...(is_default === true && { is_default: true }),
         },
         include: {
-          district: { select: { id: true, name: true, type: true } },
+          district: { select: { id: true, name: true, province_code: true, province_name: true } },
           ward: { select: { id: true, name: true, type: true } },
         },
       });
@@ -227,6 +239,7 @@ const setDefaultAddress = async (req, res) => {
 const getDistricts = async (req, res) => {
   try {
     const districts = await prisma.district.findMany({
+      where: { is_active: true },
       orderBy: { id: 'asc' },
     });
     return success(res, districts);
@@ -245,7 +258,7 @@ const getWards = async (req, res) => {
     if (!districtId) return error(res, 'Thiếu ID khu vực phục vụ', 400);
 
     const wards = await prisma.ward.findMany({
-      where: { district_id: districtId },
+      where: { district_id: districtId, is_active: true, district: { is_active: true } },
       orderBy: { id: 'asc' },
     });
     return success(res, wards);

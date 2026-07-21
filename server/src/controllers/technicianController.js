@@ -6,19 +6,99 @@ const {
   BOOKING_STATUS_TRANSITIONS,
   QUOTATION_STATUS,
   PAYMENT_STATUS,
+  PAYMENT_METHOD,
+  PAYMENT_SETTLEMENT_STATUS,
 } = require('../config/constants');
 const {
   notifyQuotationSent,
   notifyAwaitingPayment,
+  notifyJobAcceptedByTech,
+  notifyJobRejectedByTech,
+  notifyJobInspecting,
 } = require('../services/notificationService');
 const { completeBookingPayment } = require('../services/paymentCompletionService');
-const { calculatePayableAmount } = require('../utils/pricing');
+const { calculatePayableAmount, calculateVoucherDiscount } = require('../utils/pricing');
+const { getOwnedStorageKey } = require('../services/imageStorageService');
 
 const getMyProfile = async (userId, include = {}) => {
   return prisma.technicianProfile.findUnique({
     where: { user_id: userId },
     include,
   });
+};
+
+const getAvailableTechnicians = async (req, res) => {
+  try {
+    const serviceId = parseInt(req.query.service_id, 10);
+    const districtId = parseInt(req.query.district_id, 10);
+
+    if (!serviceId || !districtId) {
+      return error(res, 'Thiếu dịch vụ hoặc khu vực để quét thợ', 400);
+    }
+
+    const technicians = await prisma.technicianProfile.findMany({
+      where: {
+        is_available: true,
+        user: {
+          is_active: true,
+          is_locked: false,
+        },
+        OR: [{ district_id: districtId }, { district_id: null }],
+        skills: {
+          some: { service_id: serviceId },
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            full_name: true,
+            phone: true,
+            avatar_url: true,
+          },
+        },
+        district: { select: { id: true, name: true } },
+        skills: {
+          where: { service_id: serviceId },
+          include: { service: { select: { id: true, name: true } } },
+        },
+        _count: {
+          select: {
+            bookings: {
+              where: {
+                status: {
+                  notIn: [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED],
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ avg_rating: 'desc' }, { total_jobs: 'desc' }],
+      take: 10,
+    });
+
+    const result = technicians.map((tech, index) => ({
+      id: tech.id,
+      name: tech.user?.full_name || `Kỹ thuật viên ${tech.id}`,
+      phone: tech.user?.phone || null,
+      district_id: tech.district_id,
+      district_name: tech.district?.name || 'Toàn TP',
+      skill: tech.skills?.[0]?.service?.name || 'Dịch vụ phù hợp',
+      service_ids: tech.skills?.map((skill) => skill.service_id) || [],
+      rating: Number(tech.avg_rating || 0),
+      jobs: tech.total_jobs || 0,
+      active_jobs: tech._count?.bookings || 0,
+      distance_km: tech.district_id === districtId ? 1.2 + index * 0.7 : 4.5 + index,
+      eta_minutes: tech.district_id === districtId ? 7 + index * 3 : 18 + index * 4,
+      available: tech.is_available,
+    }));
+
+    return success(res, result);
+  } catch (err) {
+    console.error('getAvailableTechnicians error:', err);
+    return error(res, 'Không thể quét kỹ thuật viên khả dụng', 500);
+  }
 };
 
 const getAssignedJobs = async (req, res) => {
@@ -90,7 +170,7 @@ const getJobDetail = async (req, res) => {
 
 const acceptJob = async (req, res) => {
   try {
-    const profile = await getMyProfile(req.user.id);
+    const profile = await getMyProfile(req.user.id, { user: true });
     if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
 
     const bookingId = parseInt(req.params.id, 10);
@@ -115,6 +195,12 @@ const acceptJob = async (req, res) => {
       }),
     ]);
 
+    try {
+      await notifyJobAcceptedByTech(booking.customer_id, bookingId, profile.user.full_name);
+    } catch (notifErr) {
+      console.error('Failed to send job accepted notification:', notifErr.message);
+    }
+
     return success(res, null, 'Nhan don thanh cong');
   } catch (err) {
     console.error('Accept job error:', err);
@@ -124,7 +210,7 @@ const acceptJob = async (req, res) => {
 
 const rejectJob = async (req, res) => {
   try {
-    const profile = await getMyProfile(req.user.id);
+    const profile = await getMyProfile(req.user.id, { user: true });
     if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
 
     const bookingId = parseInt(req.params.id, 10);
@@ -153,6 +239,19 @@ const rejectJob = async (req, res) => {
       }),
     ]);
 
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN', is_active: true },
+        select: { id: true },
+      });
+      const adminIds = admins.map(a => a.id);
+      if (adminIds.length > 0) {
+        await notifyJobRejectedByTech(adminIds, bookingId, profile.user.full_name, reason);
+      }
+    } catch (notifErr) {
+      console.error('Failed to send job rejected notification:', notifErr.message);
+    }
+
     return success(res, null, 'Da tu choi don. Admin se phan cong lai.');
   } catch (err) {
     console.error('Reject job error:', err);
@@ -166,7 +265,7 @@ const updateJobStatus = async (req, res) => {
     if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
 
     const bookingId = parseInt(req.params.id, 10);
-    const { new_status, note } = req.body;
+    const { new_status, note, image_urls = [] } = req.body;
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking || booking.technician_profile_id !== profile.id) {
       return error(res, 'Don hang khong ton tai hoac khong thuoc ve ban', 404);
@@ -182,7 +281,20 @@ const updateJobStatus = async (req, res) => {
       return error(res, `Khong the chuyen tu ${booking.status} sang ${new_status}`, 400);
     }
 
-    await prisma.$transaction([
+    const noteText = typeof note === 'string' ? note.trim() : '';
+    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT) {
+      if (!noteText) {
+        return error(res, 'Vui long nhap ghi chu ban giao khi hoan thanh sua chua', 400);
+      }
+
+      if (image_urls.some((url) => !getOwnedStorageKey(url, req.user.id))) {
+        return error(res, 'Anh sau sua chua khong hop le hoac khong thuoc tai khoan cua ban', 403);
+      }
+    } else if (image_urls.length > 0) {
+      return error(res, 'Chi duoc gui anh khi bao cao hoan thanh sua chua', 400);
+    }
+
+    const operations = [
       prisma.booking.update({ where: { id: bookingId }, data: { status: new_status } }),
       prisma.bookingStatusHistory.create({
         data: {
@@ -190,12 +302,33 @@ const updateJobStatus = async (req, res) => {
           from_status: booking.status,
           to_status: new_status,
           changed_by: req.user.id,
-          note: note || `Tho cap nhat trang thai sang ${new_status}`,
+          note: noteText || `Tho cap nhat trang thai sang ${new_status}`,
         },
       }),
-    ]);
-    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT) {
-      await notifyAwaitingPayment(booking.customer_id, bookingId, booking.payment_method);
+    ];
+
+    if (new_status === BOOKING_STATUS.AWAITING_PAYMENT && image_urls.length > 0) {
+      operations.push(
+        prisma.bookingImage.createMany({
+          data: image_urls.map((url) => ({
+            booking_id: bookingId,
+            image_url: url,
+            uploaded_by: 'TECHNICIAN',
+          })),
+        })
+      );
+    }
+
+    await prisma.$transaction(operations);
+    try {
+      if (new_status === BOOKING_STATUS.AWAITING_PAYMENT) {
+        await notifyAwaitingPayment(booking.customer_id, bookingId, booking.payment_method);
+      } else if (new_status === BOOKING_STATUS.INSPECTING) {
+        const profileWithUser = await getMyProfile(req.user.id, { user: true });
+        await notifyJobInspecting(booking.customer_id, bookingId, profileWithUser.user.full_name);
+      }
+    } catch (notifErr) {
+      console.error('Failed to send job status notification:', notifErr.message);
     }
 
     return success(res, null, `Cap nhat trang thai thanh ${new_status} thanh cong`);
@@ -212,7 +345,10 @@ const createQuotation = async (req, res) => {
 
     const bookingId = parseInt(req.params.id, 10);
     const { note, items } = req.body;
-    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { voucher: true },
+    });
     if (!booking || booking.technician_profile_id !== profile.id) {
       return error(res, 'Don hang khong ton tai hoac khong thuoc ve ban', 404);
     }
@@ -221,6 +357,8 @@ const createQuotation = async (req, res) => {
     }
 
     const totalExtraPrice = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+    const quotationDiscount = calculateVoucherDiscount(booking.voucher, totalExtraPrice);
+    const quotationPayable = calculatePayableAmount(totalExtraPrice, quotationDiscount);
     const quotation = await prisma.$transaction(async (tx) => {
       const newQuotation = await tx.quotation.create({
         data: {
@@ -240,7 +378,18 @@ const createQuotation = async (req, res) => {
         include: { items: true },
       });
 
-      await tx.booking.update({ where: { id: bookingId }, data: { status: BOOKING_STATUS.QUOTED } });
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: BOOKING_STATUS.QUOTED,
+          discount_amount: quotationDiscount,
+          final_price: null,
+        },
+      });
+      await tx.payment.update({
+        where: { booking_id: bookingId },
+        data: { amount: quotationPayable },
+      });
       await tx.bookingStatusHistory.create({
         data: {
           booking_id: bookingId,
@@ -300,6 +449,60 @@ const confirmCashPayment = async (req, res) => {
   } catch (err) {
     console.error('Confirm cash payment error:', err);
     return error(res, 'Xac nhan thu tien that bai', 500);
+  }
+};
+
+const getMyCashWallet = async (req, res) => {
+  try {
+    const profile = await getMyProfile(req.user.id);
+    if (!profile) return error(res, 'Khong tim thay ho so ky thuat vien', 404);
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        method: PAYMENT_METHOD.CASH,
+        status: PAYMENT_STATUS.PAID,
+        booking: { technician_profile_id: profile.id },
+      },
+      include: {
+        booking: {
+          select: {
+            booking_date: true,
+            customer: { select: { full_name: true, phone: true } },
+            service: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: [{ paid_at: 'desc' }, { id: 'desc' }],
+    });
+
+    const walletPayments = payments.map((payment) => ({
+      id: payment.id,
+      booking_id: payment.booking_id,
+      service_name: payment.booking.service.name,
+      customer_name: payment.booking.customer.full_name,
+      customer_phone: payment.booking.customer.phone,
+      booking_date: payment.booking.booking_date,
+      amount: Number(payment.amount),
+      paid_at: payment.paid_at,
+      settlement_status: payment.settlement_status,
+      settlement_note: payment.settlement_note,
+    }));
+
+    const totals = walletPayments.reduce((summary, payment) => {
+      summary.total_collected += payment.amount;
+      if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.SETTLED) {
+        summary.total_settled += payment.amount;
+      }
+      if (payment.settlement_status === PAYMENT_SETTLEMENT_STATUS.PENDING) {
+        summary.total_pending += payment.amount;
+      }
+      return summary;
+    }, { total_collected: 0, total_settled: 0, total_pending: 0 });
+
+    return success(res, { ...totals, payments: walletPayments });
+  } catch (err) {
+    console.error('Get cash wallet error:', err);
+    return error(res, 'Khong the tai vi tien mat', 500);
   }
 };
 
@@ -396,6 +599,7 @@ const getMyRating = async (req, res) => {
 };
 
 module.exports = {
+  getAvailableTechnicians,
   getAssignedJobs,
   getJobDetail,
   acceptJob,
@@ -403,6 +607,7 @@ module.exports = {
   updateJobStatus,
   createQuotation,
   confirmCashPayment,
+  getMyCashWallet,
   getMySchedule,
   getJobHistory,
   getMyRating,

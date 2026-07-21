@@ -39,12 +39,13 @@ export default function PublicNavbar() {
 
   return (
     <nav className="homefix-navbar">
-      <Link to="/" className="logo">
-        HomeFix
+      <Link to="/" className="logo" style={{ display: 'flex', alignItems: 'center' }}>
+        <img src="/logo.png" alt="HomeFix Logo" style={{ height: 40, objectFit: 'contain' }} />
       </Link>
       <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
         <Link to="/" style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: 15 }}>Trang chủ</Link>
         <Link to="/services" style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: 15 }}>Dịch vụ</Link>
+        <Link to="/blogs" style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: 15 }}>Tin tức</Link>
         {isAuthenticated ? (
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
             <NotificationBell />

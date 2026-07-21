@@ -6,7 +6,6 @@ const { sendOtpEmail, generateOtp, sendWelcomeEmail } = require('../utils/mailer
 const { BUSINESS_RULES, ROLES } = require('../config/constants');
 const activeSessions = require('../utils/sessionStore');
 
-
 const register = async (req, res) => {
   try {
     const { email, password, full_name, phone } = req.body;
@@ -53,7 +52,7 @@ const register = async (req, res) => {
       select: { id: true, email: true, full_name: true, role: true },
     });
 
-    // Tạo OTP 
+    // Tạo OTP
     const otpCode = generateOtp();
     const expiresAt = new Date(Date.now() + BUSINESS_RULES.OTP_EXPIRY_MINUTES * 60 * 1000);
 

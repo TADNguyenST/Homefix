@@ -1,51 +1,42 @@
-const prisma = require('../utils/prisma');
 const { success, error } = require('../utils/response');
 const { diagnoseIssue, analyzeSentiment, recommendTechnicians } = require('../services/aiService');
 
 //Phân tích AI và lưu kết quả
 const diagnose = async (req, res) => {
   try {
-    const { description, base64_image = null, booking_id } = req.body;
+    const { description, base64_image = null } = req.body;
 
     // Gọi AI service
     const result = await diagnoseIssue(description, base64_image);
 
-    // Lưu kết quả vào bảng ai_analysis nếu có booking_id
-    let savedAnalysis = null;
-    if (booking_id) {
-      // Kiểm tra booking tồn tại
-      const booking = await prisma.booking.findUnique({ where: { id: booking_id } });
-      if (!booking) return error(res, 'Không tìm thấy đơn hàng', 404);
-
-      savedAnalysis = await prisma.aiAnalysis.create({
-        data: {
-          booking_id,
-          input_text: description,
-          severity: result.severity,
-          suggested_services: result.suggested_services,
-          tech_summary: result.summary,
-          raw_response: result,
-        },
-      });
-
-      // Cập nhật ai_severity và ai_summary trên booking
-      await prisma.booking.update({
-        where: { id: booking_id },
-        data: {
-          ai_severity: result.severity,
-          ai_summary: result.summary,
-        },
-      });
-    }
-
     return success(res, {
       diagnosis: result,
-      saved: savedAnalysis,
     }, 'Phân tích sự cố thành công');
   } catch (err) {
     console.error('diagnose error:', err);
     if (err.message === 'SPAM_DETECTED') {
       return error(res, 'Nội dung bạn nhập không hợp lệ hoặc không liên quan đến dịch vụ sửa chữa nhà cửa. Vui lòng thử lại!', 400);
+    }
+    if (err.message === 'INVALID_IMAGE') {
+      return error(res, 'Ảnh không hợp lệ. Vui lòng dùng ảnh JPG, PNG hoặc WEBP.', 400);
+    }
+    if (err.message === 'IMAGE_TOO_LARGE') {
+      return error(res, 'Ảnh phân tích quá lớn. Vui lòng chọn ảnh nhỏ hơn.', 400);
+    }
+    if (err.code === 'GEMINI_NOT_CONFIGURED') {
+      return error(res, 'Gemini API chưa được cấu hình. Vui lòng liên hệ quản trị viên.', 503);
+    }
+    if (err.code === 'GEMINI_QUOTA_EXCEEDED') {
+      return error(res, 'Gemini API đã hết quota. Vui lòng kiểm tra quota/billing hoặc thay API key.', 429);
+    }
+    if (err.code === 'GEMINI_ACCESS_DENIED') {
+      return error(res, 'Project Gemini bị từ chối quyền truy cập. Vui lòng kiểm tra API key và quyền của project.', 503);
+    }
+    if (err.code === 'GEMINI_CONNECTION_FAILED') {
+      return error(res, 'Không thể kết nối Gemini API. Vui lòng thử lại sau.', 503);
+    }
+    if (['GEMINI_INIT_FAILED', 'GEMINI_REQUEST_FAILED'].includes(err.code)) {
+      return error(res, 'Dịch vụ Gemini đang tạm thời không khả dụng. Vui lòng thử lại sau.', 503);
     }
     return error(res, 'Không thể phân tích sự cố', 500);
   }
@@ -55,12 +46,18 @@ const diagnose = async (req, res) => {
 const getRecommendedTechnicians = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const recommendations = await recommendTechnicians(parseInt(bookingId));
+    const parsedBookingId = Number(bookingId);
+    if (!Number.isInteger(parsedBookingId) || parsedBookingId <= 0) {
+      return error(res, 'Mã đơn đặt lịch không hợp lệ', 400);
+    }
+    const recommendations = await recommendTechnicians(parsedBookingId);
 
     return success(res, recommendations, `Tìm thấy ${recommendations.length} kỹ thuật viên phù hợp`);
   } catch (err) {
     console.error('getRecommendedTechnicians error:', err);
-    return error(res, err.message || 'Không thể gợi ý kỹ thuật viên', 500);
+    if (err.code === 'BOOKING_NOT_FOUND') return error(res, err.message, 404);
+    if (err.code === 'BOOKING_NOT_ASSIGNABLE') return error(res, err.message, 409);
+    return error(res, 'Không thể gợi ý kỹ thuật viên lúc này', 500);
   }
 };
 

@@ -1,15 +1,16 @@
-import { useState } from 'react';
-import { Card, List, Typography, Spin, Button, Tag, Space, message, Badge } from 'antd';
+import { Card, List, Typography, Spin, Button, message, Badge } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationApi } from '../../api/bookingApi';
-import { formatDateTime, timeAgo } from '../../utils/helpers';
+import { timeAgo, getNotificationRedirectUrl } from '../../utils/helpers';
 import { useAuth } from '../../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 
 export default function NotificationPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const { data: notifData, isLoading } = useQuery({
@@ -17,13 +18,13 @@ export default function NotificationPage() {
     queryFn: () => notificationApi.getAll({ limit: 50 }),
   });
 
-  const notifications = notifData?.data?.data || [];
-  const unreadCount = notifData?.data?.unread_count || 0;
+  const notifications = notifData?.data || [];
+  const unreadCount = notifData?.unread_count || 0;
 
   const markAsReadMutation = useMutation({
     mutationFn: (id) => notificationApi.read(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     }
   });
 
@@ -31,7 +32,7 @@ export default function NotificationPage() {
     mutationFn: () => notificationApi.readAll(),
     onSuccess: () => {
       message.success('Đã đánh dấu tất cả là đã đọc');
-      queryClient.invalidateQueries(['notifications']);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     }
   });
 
@@ -39,7 +40,10 @@ export default function NotificationPage() {
     if (!item.is_read) {
       markAsReadMutation.mutate(item.id);
     }
-    // Optionally redirect based on item.reference_id / type
+    const redirectUrl = getNotificationRedirectUrl(item, user?.role);
+    if (redirectUrl) {
+      navigate(redirectUrl);
+    }
   };
 
   return (

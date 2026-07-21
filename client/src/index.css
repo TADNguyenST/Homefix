@@ -24,7 +24,7 @@
   --bg-primary: #f8fafc;
   --bg-white: #ffffff;
   --bg-card: rgba(255, 255, 255, 0.85);
-  --bg-sidebar: #0f172a;
+  --bg-sidebar: #ffffff;
 
   /* Text */
   --text-primary: #1e293b;
@@ -342,15 +342,16 @@ a:hover {
   display: flex;
   flex-direction: column;
   transition: width var(--transition-normal);
+  border-right: 1px solid #f0f0f0;
 }
 
 .sidebar-header {
-  height: 72px;
+  height: 64px;
   display: flex;
   align-items: center;
   padding: 0 20px;
   gap: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .sidebar-header .logo-text {
@@ -367,14 +368,14 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid #f0f0f0;
 }
 .sidebar-user-info {
   flex: 1;
   min-width: 0;
 }
 .sidebar-user-name {
-  color: var(--text-white);
+  color: var(--text-primary);
   font-weight: 600;
   font-size: 14px;
   white-space: nowrap;
@@ -382,7 +383,7 @@ a:hover {
   text-overflow: ellipsis;
 }
 .sidebar-user-role {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 12px;
 }
 

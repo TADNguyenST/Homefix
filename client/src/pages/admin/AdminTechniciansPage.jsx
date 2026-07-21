@@ -1,6 +1,6 @@
 import { Table, Tag, Button, Typography, Space, Modal, message, Descriptions, Divider, Row, Col, Form, Input, InputNumber, Select, Switch, Checkbox, TimePicker, Tooltip } from 'antd';
 import { useState } from 'react';
-import { LockOutlined, UnlockOutlined } from '@ant-design/icons';
+import { LockOutlined, UnlockOutlined, EditOutlined, ToolOutlined, CalendarOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
 import dayjs from 'dayjs';
@@ -65,9 +65,37 @@ export default function AdminTechniciansPage() {
   const [selectedTech, setSelectedTech] = useState(null);
   const [isDetailVisible, setIsDetailVisible] = useState(false);
 
-  const [form] = Form.useForm();
-  const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  
+  const [addForm] = Form.useForm();
+  const [isAddModalVisible, setIsAddModalVisible] = useState(false);
+
+  const [infoForm] = Form.useForm();
+  const [isInfoModalVisible, setIsInfoModalVisible] = useState(false);
+
+  const [skillsForm] = Form.useForm();
+  const [isSkillsModalVisible, setIsSkillsModalVisible] = useState(false);
+
+  const [scheduleForm] = Form.useForm();
+  const [isScheduleModalVisible, setIsScheduleModalVisible] = useState(false);
+
+  const handleError = (err, formInstance) => {
+    console.error('Lỗi:', err);
+    if (err.errorFields) {
+      message.warning('Vui lòng điền đầy đủ và đúng định dạng các ô yêu cầu!');
+      return;
+    }
+    if (err.response?.data?.errors) {
+      const formErrors = err.response.data.errors.map(e => ({
+        name: e.field.split('.'),
+        errors: [e.message]
+      }));
+      formInstance.setFields(formErrors);
+      message.error('Dữ liệu không hợp lệ, vui lòng kiểm tra lại!');
+    } else {
+      message.error(err.response?.data?.message || err.message || 'Lỗi hệ thống');
+    }
+  };
 
   const isAccountActive = (tech) => tech.user?.is_active !== false && tech.user?.is_locked !== true;
   const getActiveBookingCount = (tech) => tech._count?.bookings || 0;
@@ -79,20 +107,17 @@ export default function AdminTechniciansPage() {
 
   const handleAdd = () => {
     setEditingId(null);
-    form.resetFields();
-    form.setFieldsValue({
+    addForm.resetFields();
+    addForm.setFieldsValue({
       schedule_days: [1, 2, 3, 4, 5],
       schedule_time: [dayjs('08:00', 'HH:mm'), dayjs('17:00', 'HH:mm')],
     });
-    setIsModalVisible(true);
+    setIsAddModalVisible(true);
   };
 
-  const handleEdit = (record) => {
+  const handleEditInfo = (record) => {
     setEditingId(record.id);
-    // Tìm giờ bắt đầu / kết thúc từ schedules hiện có
-    const existingDays = record.schedules?.map(s => s.day_of_week) || [];
-    const firstSchedule = record.schedules?.[0];
-    form.setFieldsValue({
+    infoForm.setFieldsValue({
       full_name: record.user?.full_name,
       email: record.user?.email,
       phone: record.user?.phone,
@@ -100,13 +125,29 @@ export default function AdminTechniciansPage() {
       district_id: record.district_id,
       bio: record.bio,
       is_available: record.is_available,
+    });
+    setIsInfoModalVisible(true);
+  };
+
+  const handleEditSkills = (record) => {
+    setEditingId(record.id);
+    skillsForm.setFieldsValue({
       skills: record.skills?.map(s => s.service_id) || [],
+    });
+    setIsSkillsModalVisible(true);
+  };
+
+  const handleEditSchedule = (record) => {
+    setEditingId(record.id);
+    const existingDays = record.schedules?.map(s => s.day_of_week) || [];
+    const firstSchedule = record.schedules?.[0];
+    scheduleForm.setFieldsValue({
       schedule_days: existingDays.length > 0 ? existingDays : [1, 2, 3, 4, 5],
       schedule_time: firstSchedule
         ? [dayjs(firstSchedule.start_time, 'HH:mm'), dayjs(firstSchedule.end_time, 'HH:mm')]
         : [dayjs('08:00', 'HH:mm'), dayjs('17:00', 'HH:mm')],
     });
-    setIsModalVisible(true);
+    setIsScheduleModalVisible(true);
   };
 
   const handleToggleAccount = async (record) => {
@@ -147,26 +188,12 @@ export default function AdminTechniciansPage() {
     });
   };
 
-  const handleSave = async () => {
+  const handleSaveAdd = async () => {
     try {
-      const values = await form.validateFields();
-      let techProfileId = editingId;
+      const values = await addForm.validateFields();
+      const res = await adminApi.createTechnician(values);
+      const techProfileId = res.data.profile.id;
 
-      if (editingId) {
-        await adminApi.updateTechnician(editingId, {
-          years_of_experience: values.years_of_experience,
-          district_id: values.district_id,
-          bio: values.bio,
-          is_available: values.is_available,
-        });
-        message.success('Cập nhật thông tin thành công');
-      } else {
-        const res = await adminApi.createTechnician(values);
-        techProfileId = res.data.profile.id;
-        message.success('Thêm thợ thành công. Mật khẩu mặc định: HomeFix@2026');
-      }
-
-      // Cập nhật chuyên môn (skills)
       if (values.skills && techProfileId) {
         const skillPayload = {
           skills: values.skills.map(service_id => ({ service_id, skill_level: 'INTERMEDIATE' }))
@@ -174,7 +201,6 @@ export default function AdminTechniciansPage() {
         await adminApi.updateTechSkills(techProfileId, skillPayload);
       }
 
-      // Cập nhật lịch làm việc
       if (values.schedule_days && values.schedule_time && techProfileId) {
         const startTime = values.schedule_time[0].format('HH:mm');
         const endTime = values.schedule_time[1].format('HH:mm');
@@ -188,28 +214,64 @@ export default function AdminTechniciansPage() {
         await adminApi.updateTechSchedule(techProfileId, schedulePayload);
       }
 
-      setIsModalVisible(false);
+      message.success('Thêm thợ thành công. Mật khẩu mặc định: HomeFix@2026');
+      setIsAddModalVisible(false);
       refetch();
     } catch (err) {
-      console.error('Save Technician Error:', err);
+      handleError(err, addForm);
+    }
+  };
 
-      // Lỗi do điền thiếu trên giao diện (Ant Design)
-      if (err.errorFields) {
-        message.warning('Vui lòng điền đầy đủ và đúng định dạng các ô yêu cầu!');
-        return;
-      }
-      
-      // Lỗi từ backend trả về (Zod validation hoặc trùng email)
-      if (err.response?.data?.errors) {
-        const formErrors = err.response.data.errors.map(e => ({
-          name: e.field.split('.'),
-          errors: [e.message]
-        }));
-        form.setFields(formErrors);
-        message.error('Dữ liệu không hợp lệ, vui lòng kiểm tra lại!');
-      } else {
-        message.error(err.response?.data?.message || err.message || 'Lỗi khi lưu thông tin');
-      }
+  const handleSaveInfo = async () => {
+    try {
+      const values = await infoForm.validateFields();
+      await adminApi.updateTechnician(editingId, {
+        years_of_experience: values.years_of_experience,
+        district_id: values.district_id,
+        bio: values.bio,
+        is_available: values.is_available,
+      });
+      message.success('Cập nhật thông tin cơ bản thành công');
+      setIsInfoModalVisible(false);
+      refetch();
+    } catch (err) {
+      handleError(err, infoForm);
+    }
+  };
+
+  const handleSaveSkills = async () => {
+    try {
+      const values = await skillsForm.validateFields();
+      const skillPayload = {
+        skills: values.skills?.map(service_id => ({ service_id, skill_level: 'INTERMEDIATE' })) || []
+      };
+      await adminApi.updateTechSkills(editingId, skillPayload);
+      message.success('Cập nhật chuyên môn thành công');
+      setIsSkillsModalVisible(false);
+      refetch();
+    } catch (err) {
+      handleError(err, skillsForm);
+    }
+  };
+
+  const handleSaveSchedule = async () => {
+    try {
+      const values = await scheduleForm.validateFields();
+      const startTime = values.schedule_time[0].format('HH:mm');
+      const endTime = values.schedule_time[1].format('HH:mm');
+      const schedulePayload = {
+        schedules: values.schedule_days?.map(day => ({
+          day_of_week: day,
+          start_time: startTime,
+          end_time: endTime,
+        })) || []
+      };
+      await adminApi.updateTechSchedule(editingId, schedulePayload);
+      message.success('Cập nhật lịch làm việc thành công');
+      setIsScheduleModalVisible(false);
+      refetch();
+    } catch (err) {
+      handleError(err, scheduleForm);
     }
   };
 
@@ -290,11 +352,23 @@ export default function AdminTechniciansPage() {
     {
       title: 'Hành động',
       key: 'action',
-      width: 170,
+      width: 220,
       render: (_, record) => (
         <Space size={6} style={{ flexWrap: 'nowrap' }}>
           <Button size="small" type="primary" style={compactButtonStyle} onClick={() => handleViewDetail(record)}>Chi tiết</Button>
-          <Button size="small" style={compactButtonStyle} onClick={() => handleEdit(record)}>Sửa</Button>
+          
+          <Tooltip title="Sửa thông tin cơ bản">
+             <Button size="small" icon={<EditOutlined />} style={iconButtonStyle} onClick={() => handleEditInfo(record)} />
+          </Tooltip>
+          
+          <Tooltip title="Cập nhật chuyên môn">
+             <Button size="small" icon={<ToolOutlined />} style={iconButtonStyle} onClick={() => handleEditSkills(record)} />
+          </Tooltip>
+
+          <Tooltip title="Cập nhật lịch làm việc">
+             <Button size="small" icon={<CalendarOutlined />} style={iconButtonStyle} onClick={() => handleEditSchedule(record)} />
+          </Tooltip>
+
           <Tooltip title={isAccountActive(record) ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}>
             <Button
               size="small"
@@ -330,6 +404,7 @@ export default function AdminTechniciansPage() {
           <Input.Search 
             placeholder="Tìm theo tên, email, SĐT" 
             allowClear 
+            onChange={(e) => setSearch(e.target.value)}
             onSearch={(value) => setSearch(value)}
             style={{ width: 250 }}
           />
@@ -337,8 +412,9 @@ export default function AdminTechniciansPage() {
             placeholder="Lọc theo khu vực" 
             allowClear 
             style={{ width: 200 }}
-            onChange={(val) => setFilterDistrict(val)}
+            onChange={(val) => setFilterDistrict(val === 'all' ? null : val)}
           >
+            <Select.Option value="all">Tất cả khu vực</Select.Option>
             {districts.map(d => (
               <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>
             ))}
@@ -347,8 +423,9 @@ export default function AdminTechniciansPage() {
             placeholder="Lọc theo nhận việc" 
             allowClear 
             style={{ width: 180 }}
-            onChange={(val) => setFilterStatus(val)}
+            onChange={(val) => setFilterStatus(val === 'all' ? null : val)}
           >
+            <Select.Option value="all">Tất cả trạng thái</Select.Option>
             <Select.Option value={true}>Sẵn sàng nhận việc</Select.Option>
             <Select.Option value={false}>Đang bận / Tạm nghỉ</Select.Option>
           </Select>
@@ -362,7 +439,7 @@ export default function AdminTechniciansPage() {
           pagination={{ pageSize: 15 }}
           size="middle"
           tableLayout="fixed"
-          scroll={{ x: 910 }}
+          scroll={{ x: 'max-content' }}
         />
       </div>
 
@@ -441,26 +518,26 @@ export default function AdminTechniciansPage() {
         )}
       </Modal>
 
-      {/* MODAL THÊM / SỬA */}
+      {/* MODAL THÊM MỚI */}
       <Modal
-        title={<span style={{ fontSize: 20, color: 'var(--navy)' }}>{editingId ? 'Sửa thông tin thợ' : 'Thêm mới Kỹ thuật viên'}</span>}
-        open={isModalVisible}
-        onOk={handleSave}
-        onCancel={() => setIsModalVisible(false)}
-        okText="Lưu thông tin"
+        title={<span style={{ fontSize: 20, color: 'var(--navy)' }}>Thêm mới Kỹ thuật viên</span>}
+        open={isAddModalVisible}
+        onOk={handleSaveAdd}
+        onCancel={() => setIsAddModalVisible(false)}
+        okText="Thêm mới"
         cancelText="Hủy"
         width={600}
       >
-        <Form form={form} layout="vertical">
+        <Form form={addForm} layout="vertical">
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="full_name" label="Họ và tên" rules={[{ required: true, message: 'Nhập họ tên!' }]}>
-                <Input disabled={!!editingId} placeholder="Vd: Nguyễn Văn A" />
+                <Input placeholder="Vd: Nguyễn Văn A" />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Email không hợp lệ!' }]}>
-                <Input disabled={!!editingId} placeholder="Vd: thosuachua@homefix.vn" />
+                <Input placeholder="Vd: thosuachua@homefix.vn" />
               </Form.Item>
             </Col>
           </Row>
@@ -468,7 +545,7 @@ export default function AdminTechniciansPage() {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: 'Nhập SĐT!' }]}>
-                <Input disabled={!!editingId} placeholder="Vd: 0987654321" />
+                <Input placeholder="Vd: 0987654321" />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -499,16 +576,6 @@ export default function AdminTechniciansPage() {
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            {editingId && (
-              <Col span={12}>
-                <Form.Item name="is_available" label="Trạng thái khả dụng" valuePropName="checked">
-                  <Switch checkedChildren="Sẵn sàng" unCheckedChildren="Đang bận" />
-                </Form.Item>
-              </Col>
-            )}
-          </Row>
-
           <Form.Item name="bio" label="Giới thiệu bản thân (Tùy chọn)">
             <Input.TextArea rows={3} placeholder="Mô tả kinh nghiệm, kỹ năng đặc biệt..." />
           </Form.Item>
@@ -533,11 +600,121 @@ export default function AdminTechniciansPage() {
             <TimePicker.RangePicker format="HH:mm" minuteStep={30} style={{ width: '100%' }} />
           </Form.Item>
 
-          {!editingId && (
-            <div style={{ color: 'var(--text-secondary)', fontSize: 13, background: '#f8fafc', padding: '12px', borderRadius: 8 }}>
-              💡 Mật khẩu mặc định của tài khoản sẽ được khởi tạo là: <b>HomeFix@2026</b>
-            </div>
-          )}
+          <div style={{ color: 'var(--text-secondary)', fontSize: 13, background: '#f8fafc', padding: '12px', borderRadius: 8 }}>
+            💡 Mật khẩu mặc định của tài khoản sẽ được khởi tạo là: <b>HomeFix@2026</b>
+          </div>
+        </Form>
+      </Modal>
+
+      {/* MODAL SỬA THÔNG TIN CƠ BẢN */}
+      <Modal
+        title={<span style={{ fontSize: 20, color: 'var(--navy)' }}>Cập nhật thông tin cơ bản</span>}
+        open={isInfoModalVisible}
+        onOk={handleSaveInfo}
+        onCancel={() => setIsInfoModalVisible(false)}
+        okText="Lưu thông tin"
+        cancelText="Hủy"
+        width={600}
+      >
+        <Form form={infoForm} layout="vertical">
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="full_name" label="Họ và tên">
+                <Input disabled placeholder="Vd: Nguyễn Văn A" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="email" label="Email">
+                <Input disabled placeholder="Vd: thosuachua@homefix.vn" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="phone" label="Số điện thoại">
+                <Input disabled placeholder="Vd: 0987654321" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="district_id" label="Khu vực hoạt động">
+                <Select placeholder="Chọn khu vực">
+                  {districts.map(d => (
+                    <Select.Option key={d.id} value={d.id}>{d.name}</Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="years_of_experience" label="Số năm kinh nghiệm">
+                <InputNumber min={0} max={50} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="is_available" label="Trạng thái khả dụng" valuePropName="checked">
+                <Switch checkedChildren="Sẵn sàng" unCheckedChildren="Đang bận" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item name="bio" label="Giới thiệu bản thân (Tùy chọn)">
+            <Input.TextArea rows={3} placeholder="Mô tả kinh nghiệm, kỹ năng đặc biệt..." />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* MODAL SỬA CHUYÊN MÔN */}
+      <Modal
+        title={<span style={{ fontSize: 20, color: 'var(--navy)' }}>Cập nhật chuyên môn</span>}
+        open={isSkillsModalVisible}
+        onOk={handleSaveSkills}
+        onCancel={() => setIsSkillsModalVisible(false)}
+        okText="Lưu chuyên môn"
+        cancelText="Hủy"
+        width={500}
+      >
+        <Form form={skillsForm} layout="vertical">
+          <Form.Item name="skills" label="Chuyên môn (Các dịch vụ hỗ trợ)">
+            <Select mode="multiple" placeholder="Chọn chuyên môn" allowClear>
+              {services.map(s => (
+                <Select.Option key={s.id} value={s.id}>{s.name}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* MODAL SỬA LỊCH LÀM VIỆC */}
+      <Modal
+        title={<span style={{ fontSize: 20, color: 'var(--navy)' }}>Cập nhật lịch làm việc</span>}
+        open={isScheduleModalVisible}
+        onOk={handleSaveSchedule}
+        onCancel={() => setIsScheduleModalVisible(false)}
+        okText="Lưu lịch biểu"
+        cancelText="Hủy"
+        width={500}
+      >
+        <Form form={scheduleForm} layout="vertical">
+          <Form.Item name="schedule_days" label="Ngày làm việc">
+            <Checkbox.Group style={{ width: '100%' }}>
+              <Row>
+                <Col span={6}><Checkbox value={1}>Thứ 2</Checkbox></Col>
+                <Col span={6}><Checkbox value={2}>Thứ 3</Checkbox></Col>
+                <Col span={6}><Checkbox value={3}>Thứ 4</Checkbox></Col>
+                <Col span={6}><Checkbox value={4}>Thứ 5</Checkbox></Col>
+                <Col span={6}><Checkbox value={5}>Thứ 6</Checkbox></Col>
+                <Col span={6}><Checkbox value={6}>Thứ 7</Checkbox></Col>
+                <Col span={6}><Checkbox value={0}>Chủ nhật</Checkbox></Col>
+              </Row>
+            </Checkbox.Group>
+          </Form.Item>
+
+          <Form.Item name="schedule_time" label="Giờ làm việc (Bắt đầu - Kết thúc)">
+            <TimePicker.RangePicker format="HH:mm" minuteStep={30} style={{ width: '100%' }} />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

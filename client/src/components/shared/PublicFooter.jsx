@@ -5,7 +5,9 @@ export default function PublicFooter() {
     <footer className="homefix-footer">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '32px' }}>
         <div>
-          <h4>HomeFix</h4>
+          <div style={{ background: '#fff', padding: '6px 12px', borderRadius: '8px', display: 'inline-block', marginBottom: '16px' }}>
+            <img src="/logo.png" alt="HomeFix Logo" style={{ height: 32, objectFit: 'contain' }} />
+          </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Nền tảng sửa chữa nhà cửa với chẩn đoán tự động, thợ uy tín, giá minh bạch.</p>
         </div>
         <div>

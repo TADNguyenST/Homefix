@@ -14,17 +14,17 @@ enum Role {
 }
 
 model User {
-  id            Int       @id @default(autoincrement())
-  email         String    @unique @db.VarChar(255)
-  password_hash String    @db.VarChar(255)
+  id            Int      @id @default(autoincrement())
+  email         String   @unique @db.VarChar(255)
+  password_hash String   @db.VarChar(255)
   role          Role
-  full_name     String    @db.VarChar(100)
-  phone         String?   @db.VarChar(15)
-  avatar_url    String?   @db.VarChar(500)
-  is_active     Boolean   @default(true)
-  is_locked     Boolean   @default(false)
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
+  full_name     String   @db.VarChar(100)
+  phone         String?  @db.VarChar(15)
+  avatar_url    String?  @db.VarChar(500)
+  is_active     Boolean  @default(true)
+  is_locked     Boolean  @default(false)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   passwordResetTokens PasswordResetToken[]
   customerAddresses   CustomerAddress[]
@@ -39,6 +39,7 @@ model User {
   reviews             Review[]
   complaints          Complaint[]
   notifications       Notification[]
+  blogs               Blog[]
 
   @@map("users")
 }
@@ -56,23 +57,21 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
-enum DistrictType {
-  QUAN
-  HUYEN
-}
-
 model District {
-  id         Int          @id @default(autoincrement())
-  name       String       @db.VarChar(100)
-  type       DistrictType
-  created_at DateTime     @default(now())
-  updated_at DateTime     @updatedAt
+  id            Int      @id @default(autoincrement())
+  name          String   @unique @db.VarChar(100)
+  province_code Int?
+  province_name String?  @db.VarChar(100)
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
-  wards               Ward[]
-  customerAddresses   CustomerAddress[]
-  technicianProfiles  TechnicianProfile[]
-  bookings            Booking[]
+  wards              Ward[]
+  customerAddresses  CustomerAddress[]
+  technicianProfiles TechnicianProfile[]
+  bookings           Booking[]
 
+  @@index([province_code, is_active])
   @@map("districts")
 }
 
@@ -80,20 +79,25 @@ enum WardType {
   PHUONG
   XA
   THI_TRAN
+  DAC_KHU
 }
 
 model Ward {
-  id          Int      @id @default(autoincrement())
-  district_id Int
-  name        String   @db.VarChar(100)
-  type        WardType
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  district_id   Int
+  external_code Int?     @unique
+  name          String   @db.VarChar(100)
+  type          WardType
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   district          District          @relation(fields: [district_id], references: [id], onDelete: Cascade)
   customerAddresses CustomerAddress[]
   bookings          Booking[]
 
+  @@unique([district_id, name])
+  @@index([district_id, is_active])
   @@map("wards")
 }
 
@@ -180,12 +184,12 @@ model TechnicianProfile {
   created_at           DateTime @default(now())
   updated_at           DateTime @updatedAt
 
-  user        User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  district    District?            @relation(fields: [district_id], references: [id], onDelete: SetNull)
-  skills      TechnicianSkill[]
-  schedules   TechnicianSchedule[]
-  bookings    Booking[]
-  reviews     Review[]
+  user      User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  district  District?            @relation(fields: [district_id], references: [id], onDelete: SetNull)
+  skills    TechnicianSkill[]
+  schedules TechnicianSchedule[]
+  bookings  Booking[]
+  reviews   Review[]
 
   @@map("technician_profiles")
 }
@@ -262,6 +266,7 @@ model VoucherUsage {
   booking Booking @relation(fields: [booking_id], references: [id], onDelete: Cascade)
 
   @@unique([voucher_id, booking_id])
+  @@unique([voucher_id, user_id])
   @@map("voucher_usages")
 }
 
@@ -296,15 +301,15 @@ model Booking {
   created_at            DateTime      @default(now())
   updated_at            DateTime      @updatedAt
 
-  customer          User                  @relation(fields: [customer_id], references: [id], onDelete: Cascade)
-  technicianProfile TechnicianProfile?    @relation(fields: [technician_profile_id], references: [id], onDelete: SetNull)
-  service           Service               @relation(fields: [service_id], references: [id], onDelete: Cascade)
-  deviceType        DeviceType?           @relation(fields: [device_type_id], references: [id], onDelete: SetNull)
-  customerAddress   CustomerAddress?      @relation(fields: [customer_address_id], references: [id], onDelete: SetNull)
-  district          District              @relation(fields: [district_id], references: [id])
-  ward              Ward                  @relation(fields: [ward_id], references: [id])
-  voucher           Voucher?              @relation(fields: [voucher_id], references: [id], onDelete: SetNull)
-  
+  customer          User               @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  technicianProfile TechnicianProfile? @relation(fields: [technician_profile_id], references: [id], onDelete: SetNull)
+  service           Service            @relation(fields: [service_id], references: [id], onDelete: Cascade)
+  deviceType        DeviceType?        @relation(fields: [device_type_id], references: [id], onDelete: SetNull)
+  customerAddress   CustomerAddress?   @relation(fields: [customer_address_id], references: [id], onDelete: SetNull)
+  district          District           @relation(fields: [district_id], references: [id])
+  ward              Ward               @relation(fields: [ward_id], references: [id])
+  voucher           Voucher?           @relation(fields: [voucher_id], references: [id], onDelete: SetNull)
+
   images          BookingImage[]
   statusHistories BookingStatusHistory[]
   quotations      Quotation[]
@@ -507,4 +512,20 @@ model AiAnalysis {
   booking Booking @relation(fields: [booking_id], references: [id], onDelete: Cascade)
 
   @@map("ai_analysis")
+}
+
+model Blog {
+  id           Int      @id @default(autoincrement())
+  title        String   @db.VarChar(255)
+  slug         String   @unique @db.VarChar(255)
+  content      String   @db.Text
+  image_urls   String[] @default([])
+  author_id    Int
+  is_published Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  author       User     @relation(fields: [author_id], references: [id], onDelete: Cascade)
+
+  @@map("blogs")
 }

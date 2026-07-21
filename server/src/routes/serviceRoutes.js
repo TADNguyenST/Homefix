@@ -6,6 +6,7 @@ const {
   getServiceById,
   getDeviceTypes,
   getPopularServices,
+  getServiceReviews,
 } = require('../controllers/serviceController');
 
 // ==================== All Routes are Public ====================
@@ -24,5 +25,8 @@ router.get('/popular', getPopularServices);
 
 // Lấy chi tiết dịch vụ theo ID
 router.get('/:id', getServiceById);
+
+// Lấy đánh giá của dịch vụ theo ID
+router.get('/:id/reviews', getServiceReviews);
 
 module.exports = router;

@@ -46,11 +46,15 @@ export const adminApi = {
 
   // Districts & Wards
   getDistricts: (params) => axiosClient.get('/admin/districts', { params }),
+  getAdministrativeProvinces: () => axiosClient.get('/admin/administrative/provinces'),
+  getAdministrativeWards: (provinceCode) => axiosClient.get(`/admin/administrative/provinces/${provinceCode}/wards`),
   createDistrict: (data) => axiosClient.post('/admin/districts', data),
   updateDistrict: (id, data) => axiosClient.put(`/admin/districts/${id}`, data),
+  toggleDistrict: (id) => axiosClient.put(`/admin/districts/${id}/toggle`),
   deleteDistrict: (id) => axiosClient.delete(`/admin/districts/${id}`),
   createWard: (districtId, data) => axiosClient.post(`/admin/districts/${districtId}/wards`, data),
   updateWard: (id, data) => axiosClient.put(`/admin/wards/${id}`, data),
+  toggleWard: (id) => axiosClient.put(`/admin/wards/${id}/toggle`),
   deleteWard: (id) => axiosClient.delete(`/admin/wards/${id}`),
 
   // Vouchers
@@ -64,6 +68,8 @@ export const adminApi = {
   getPayments: (params) => axiosClient.get('/admin/payments', { params }),
   getPaymentById: (id) => axiosClient.get(`/admin/payments/${id}`),
   confirmCashSettlement: (id, data = {}) => axiosClient.put(`/admin/payments/${id}/confirm-cash-settlement`, data),
+  getTechnicianWallets: () => axiosClient.get('/admin/payments/technician-wallets'),
+  confirmCashSettlementBatch: (data) => axiosClient.put('/admin/payments/confirm-cash-settlement-batch', data),
 
   // Complaints
   getComplaints: (params) => axiosClient.get('/admin/complaints', { params }),

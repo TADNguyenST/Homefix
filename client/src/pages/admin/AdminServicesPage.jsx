@@ -4,13 +4,11 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined, UndoOutline
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
 import axiosClient from '../../api/axiosClient';
-import { formatVND } from '../../utils/helpers';
+import { formatVND, resolveAssetUrl } from '../../utils/helpers';
 
 const { Title } = Typography;
 const { TextArea } = Input;
 const { Option } = Select;
-
-const API_BASE = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
 export default function AdminServicesPage() {
   const [search, setSearch] = useState('');
@@ -30,7 +28,8 @@ export default function AdminServicesPage() {
       search,
       category_id: filterCategory,
       is_active: filterStatus,
-      is_deleted: isShowingTrash
+      is_deleted: isShowingTrash,
+      limit: 100,
     }),
   });
 
@@ -125,8 +124,7 @@ export default function AdminServicesPage() {
       const res = await axiosClient.post('/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      const imageUrl = API_BASE + res.data.url;
-      form.setFieldsValue({ image_url: imageUrl });
+      form.setFieldsValue({ image_url: res.data.url });
       message.success('Upload ảnh thành công');
     } catch {
       message.error('Lỗi upload ảnh');
@@ -154,7 +152,7 @@ export default function AdminServicesPage() {
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {imgUrl ? (
-              <img src={imgUrl} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', border: '1px solid #e2e8f0' }} />
+              <img src={resolveAssetUrl(imgUrl)} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', border: '1px solid #e2e8f0' }} />
             ) : (
               <div style={{ width: 44, height: 44, borderRadius: 8, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#94a3b8' }}>📷</div>
             )}
@@ -255,8 +253,9 @@ export default function AdminServicesPage() {
             placeholder="Lọc theo danh mục"
             allowClear
             style={{ width: 200 }}
-            onChange={(val) => setFilterCategory(val)}
+            onChange={(val) => setFilterCategory(val === 'all' ? null : val)}
           >
+            <Select.Option value="all">Tất cả danh mục</Select.Option>
             {categories.map(c => (
               <Select.Option key={c.id} value={c.id}>{c.name}</Select.Option>
             ))}
@@ -265,8 +264,9 @@ export default function AdminServicesPage() {
             placeholder="Lọc theo trạng thái"
             allowClear
             style={{ width: 180 }}
-            onChange={(val) => setFilterStatus(val)}
+            onChange={(val) => setFilterStatus(val === 'all' ? null : val)}
           >
+            <Select.Option value="all">Tất cả trạng thái</Select.Option>
             <Select.Option value={true}>Hoạt động (Bật)</Select.Option>
             <Select.Option value={false}>Ngừng (Tắt)</Select.Option>
           </Select>
@@ -325,7 +325,7 @@ export default function AdminServicesPage() {
               </Form.Item>
               {form.getFieldValue('image_url') && (
                 <img
-                  src={form.getFieldValue('image_url')}
+                  src={resolveAssetUrl(form.getFieldValue('image_url'))}
                   alt="Preview"
                   style={{ width: '100%', maxHeight: 160, objectFit: 'cover', borderRadius: 8, marginTop: 8, border: '1px solid #e2e8f0' }}
                 />

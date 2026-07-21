@@ -18,6 +18,7 @@ export const uploadApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+  remove: (url) => axiosClient.delete('/upload', { data: { url } }),
 };
 
 export const quotationApi = {

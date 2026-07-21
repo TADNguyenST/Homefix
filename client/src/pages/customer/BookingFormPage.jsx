@@ -9,14 +9,38 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { formatVND, isBookingSlotAvailable } from '../../utils/helpers';
 import { BOOKING_TIME_SLOTS } from '../../utils/constants';
 
-// Tiện ích chuyển đổi File sang Base64
-const getBase64 = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-  });
+const AI_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024;
+
+// Resize ảnh trước khi gửi dạng base64 để tránh request quá lớn và giảm thời gian AI xử lý.
+const prepareImageForAI = (file) => new Promise((resolve, reject) => {
+  if (!AI_IMAGE_TYPES.includes(file.type)) {
+    reject(new Error('AI chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP'));
+    return;
+  }
+  if (file.size > MAX_UPLOAD_SIZE) {
+    reject(new Error('Ảnh không được vượt quá 5 MB'));
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('Không thể đọc ảnh đã chọn'));
+  reader.onload = () => {
+    const image = new Image();
+    image.onerror = () => reject(new Error('Tệp ảnh không hợp lệ'));
+    image.onload = () => {
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    image.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -83,29 +107,42 @@ export default function BookingFormPage() {
 
     try {
       setIsDiagnosing(true);
+      setAiResult(null);
+      setAiResultSource(null);
       
       // Chuyển ảnh đầu tiên thành base64 nếu có
       let base64_image = null;
       if (fileList.length > 0 && fileList[0].originFileObj) {
-        base64_image = await getBase64(fileList[0].originFileObj);
+        base64_image = await prepareImageForAI(fileList[0].originFileObj);
       }
 
       const res = await aiApi.diagnose({ description, base64_image });
       const diagnosis = res.data.diagnosis; // { severity, service_id, diagnosis_error, diagnosis_solution, safety_tips, predicted_cause, suggested_action, summary }
       setAiResult(diagnosis);
       setAiResultSource('booking');
-      
+
       // Auto-select service dựa trên ID do AI trả về
-      if (diagnosis.service_id) {
+      const matchedService = services.find(s => s.id === diagnosis.service_id);
+      if (matchedService) {
         form.setFieldsValue({ service_id: diagnosis.service_id });
-        const match = services.find(s => s.id === diagnosis.service_id);
-        if (match) {
-          message.success(`Hệ thống chẩn đoán xong và tự động chọn dịch vụ: ${match.name}`);
+
+        // Auto-select device type nếu AI nhận diện được
+        if (diagnosis.device_type_id) {
+          form.setFieldsValue({ device_type_id: diagnosis.device_type_id });
+        }
+
+        if (diagnosis.requires_inspection) {
+          message.info(`Chưa có dịch vụ sửa khớp hoàn toàn. Hệ thống đã chọn: ${matchedService.name}`, 5);
+        } else {
+          message.success(`Hệ thống chẩn đoán xong và tự động chọn dịch vụ: ${matchedService.name}`);
         }
       } else {
-        message.info('Đã phân tích xong. Vui lòng tự chọn dịch vụ thủ công ở bên dưới.');
+        message.warning('Không có dịch vụ nào phù hợp 100% với sự cố của bạn. Vui lòng liên hệ Admin qua hotline 1900 1234 để được hỗ trợ báo giá chính xác nhất!', 5);
+        form.setFieldsValue({ service_id: null });
       }
     } catch (err) {
+      setAiResult(null);
+      setAiResultSource(null);
       message.error(err.message || 'Lỗi khi chạy chẩn đoán thông minh');
     } finally {
       setIsDiagnosing(false);
@@ -150,6 +187,7 @@ export default function BookingFormPage() {
   };
 
   const onFinish = async (values) => {
+    let uploadedImageUrls = [];
     try {
       setIsSubmitting(true);
       
@@ -175,10 +213,11 @@ export default function BookingFormPage() {
         .map(file => file.originFileObj)
         .filter(Boolean);
 
-      let imageUrls = [];
       if (uploadableFiles.length > 0) {
-        const uploadResults = await Promise.all(uploadableFiles.map(file => uploadApi.image(file)));
-        imageUrls = uploadResults.map(result => result.data?.url).filter(Boolean);
+        for (const file of uploadableFiles) {
+          const uploadResult = await uploadApi.image(file);
+          if (uploadResult.data?.url) uploadedImageUrls.push(uploadResult.data.url);
+        }
       }
 
       const payload = {
@@ -195,7 +234,7 @@ export default function BookingFormPage() {
         payment_method: values.payment_method,
         // Chẩn đoán đính kèm
         ai_diagnosis: aiResult?.suggested_action || aiResult?.diagnosis_solution || null,
-        image_urls: imageUrls,
+        image_urls: uploadedImageUrls,
         voucher_code: values.voucher_code || form.getFieldValue('voucher_code') || null,
       };
 
@@ -204,6 +243,9 @@ export default function BookingFormPage() {
       navigate(`/customer/bookings/${res.data.id}`);
       
     } catch (err) {
+      if (uploadedImageUrls.length > 0) {
+        await Promise.allSettled(uploadedImageUrls.map(url => uploadApi.remove(url)));
+      }
       if (err.errors && err.errors.length > 0) {
         const errorMsgs = err.errors.map(e => `${e.field} (${e.message})`).join(', ');
         message.error(`Lỗi: ${errorMsgs}`);
@@ -257,9 +299,19 @@ export default function BookingFormPage() {
               listType="picture-card"
               fileList={fileList}
               onChange={({ fileList: newFileList }) => setFileList(newFileList)}
-              beforeUpload={() => false}
+              beforeUpload={(file) => {
+                if (!AI_IMAGE_TYPES.includes(file.type)) {
+                  message.error('Chỉ hỗ trợ ảnh JPG, PNG hoặc WEBP');
+                  return Upload.LIST_IGNORE;
+                }
+                if (file.size > MAX_UPLOAD_SIZE) {
+                    message.error('Mỗi ảnh không được vượt quá 5 MB');
+                  return Upload.LIST_IGNORE;
+                }
+                return false;
+              }}
               maxCount={3}
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp"
             >
               {fileList.length >= 3 ? null : (
                 <div>
@@ -298,7 +350,9 @@ export default function BookingFormPage() {
                 <div style={{ padding: '16px 24px', background: 'rgba(30, 41, 59, 0.8)', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <RobotOutlined style={{ color: '#fbbf24', fontSize: 18 }} />
-                    <Text strong style={{ color: '#fcd34d', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Bản Chẩn Đoán AI</Text>
+                    <Text strong style={{ color: '#fcd34d', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>
+                      Bản Chẩn Đoán Gemini {aiResult.model ? `• ${aiResult.model}` : ''}
+                    </Text>
                   </div>
                   <Tag color={aiResult.severity === 'HIGH' || aiResult.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b'} style={{ border: 'none', fontWeight: 600, padding: '4px 12px', borderRadius: 20 }}>
                     Mức độ: {aiResult.severity}
@@ -306,6 +360,15 @@ export default function BookingFormPage() {
                 </div>
 
                 <div style={{ padding: 24 }}>
+                  {aiResult.requires_inspection && (
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 20, borderRadius: 12 }}
+                      message="Cần khảo sát thực tế trước khi sửa chữa"
+                      description="Chưa có dịch vụ sửa tiêu chuẩn khớp hoàn toàn. HomeFix sẽ cử kỹ thuật viên đúng chuyên môn đến kiểm tra và báo giá; chỉ tiến hành sửa khi bạn đồng ý phương án."
+                    />
+                  )}
                   <Row gutter={[24, 24]}>
                     {/* Cột Trái: Chẩn đoán */}
                     <Col xs={24} md={13}>
@@ -381,11 +444,14 @@ export default function BookingFormPage() {
             name="device_type_id"
             label="Loại thiết bị"
             rules={[{ required: false }]}
+            extra={selectedService ? "Gõ từ khóa để tìm kiếm nhanh nếu có quá nhiều thiết bị trong danh sách." : null}
           >
             <Select
               size="large"
               placeholder={selectedService ? 'Chọn loại thiết bị nếu muốn mô tả rõ hơn' : 'Chọn dịch vụ trước để lọc loại thiết bị'}
               allowClear
+              showSearch
+              optionFilterProp="children"
               disabled={!selectedService}
             >
               {filteredDeviceTypes.map(d => (
