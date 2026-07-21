@@ -19,7 +19,7 @@ import { useQuery } from '@tanstack/react-query';
 import { aiApi } from '../../api/aiApi';
 import { serviceApi } from '../../api/serviceApi';
 import { blogApi } from '../../api/blogApi';
-import { formatVND, getInitials, stripHtmlAndTruncate } from '../../utils/helpers';
+import { formatVND, getInitials, resolveAssetUrl, stripHtmlAndTruncate } from '../../utils/helpers';
 import dayjs from 'dayjs';
 import ImageGrid from '../../components/ImageGrid';
 
@@ -147,7 +147,7 @@ export default function LandingPage() {
       title: s.name,
       desc: s.description || catName || 'Dịch vụ sửa chữa tại nhà',
       price: `Từ ${formatVND(s.base_price)}`,
-      img: s.image_url || fallbackImages[idx % fallbackImages.length],
+      img: s.image_url ? resolveAssetUrl(s.image_url) : fallbackImages[idx % fallbackImages.length],
       categoryLabel: catName ? `${getCatIcon(catName)} ${catName}` : '🔧 Dịch vụ',
     };
   });

@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import dayjs from 'dayjs';
 import { serviceApi } from '../../api/serviceApi';
-import { formatDuration, formatVND } from '../../utils/helpers';
+import { formatDuration, formatVND, resolveAssetUrl } from '../../utils/helpers';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -60,7 +60,7 @@ export default function ServiceDetailPage() {
           <Card className="glass-card" styles={{ body: { padding: 0 } }} style={{ overflow: 'hidden' }}>
             {service.image_url ? (
               <div style={{ background: '#f8fafc', height: 420, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <img alt={service.name} src={service.image_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img alt={service.name} src={resolveAssetUrl(service.image_url)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               </div>
             ) : (
               <div style={{ height: 420, background: 'var(--navy-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

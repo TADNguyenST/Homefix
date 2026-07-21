@@ -46,12 +46,18 @@ const diagnose = async (req, res) => {
 const getRecommendedTechnicians = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const recommendations = await recommendTechnicians(parseInt(bookingId));
+    const parsedBookingId = Number(bookingId);
+    if (!Number.isInteger(parsedBookingId) || parsedBookingId <= 0) {
+      return error(res, 'Mã đơn đặt lịch không hợp lệ', 400);
+    }
+    const recommendations = await recommendTechnicians(parsedBookingId);
 
     return success(res, recommendations, `Tìm thấy ${recommendations.length} kỹ thuật viên phù hợp`);
   } catch (err) {
     console.error('getRecommendedTechnicians error:', err);
-    return error(res, err.message || 'Không thể gợi ý kỹ thuật viên', 500);
+    if (err.code === 'BOOKING_NOT_FOUND') return error(res, err.message, 404);
+    if (err.code === 'BOOKING_NOT_ASSIGNABLE') return error(res, err.message, 409);
+    return error(res, 'Không thể gợi ý kỹ thuật viên lúc này', 500);
   }
 };
 

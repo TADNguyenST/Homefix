@@ -7,9 +7,11 @@ import dayjs from 'dayjs';
 import { uploadApi } from '../../api/uploadApi';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
+import { resolveAssetUrl } from '../../utils/helpers';
 
 const { Title } = Typography;
-const { TextArea } = Input;
+const BLOG_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
 export default function AdminBlogsPage() {
   const queryClient = useQueryClient();
@@ -92,6 +94,19 @@ export default function AdminBlogsPage() {
       const limitError = new Error('Moi bai viet chi duoc tai toi da 3 anh');
       message.warning(limitError.message);
       onError(limitError);
+      return;
+    }
+
+    if (!BLOG_IMAGE_TYPES.includes(file.type)) {
+      const typeError = new Error('Chỉ chấp nhận ảnh JPEG, PNG, WebP hoặc GIF');
+      message.error(typeError.message);
+      onError(typeError);
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      const sizeError = new Error('Mỗi ảnh không được vượt quá 5 MB');
+      message.error(sizeError.message);
+      onError(sizeError);
       return;
     }
 
@@ -235,7 +250,7 @@ export default function AdminBlogsPage() {
               <Upload
                 customRequest={handleUpload}
                 showUploadList={false}
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/gif"
               >
                 <Button icon={<UploadOutlined />} loading={uploading}>
                   Chọn ảnh tải lên
@@ -252,7 +267,7 @@ export default function AdminBlogsPage() {
                     <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       {urls.map((url, idx) => (
                         <div key={idx} style={{ position: 'relative' }}>
-                          <img src={url} alt={`Cover Preview ${idx + 1}`} style={{ width: 120, height: 80, borderRadius: 8, objectFit: 'cover' }} />
+                          <img src={resolveAssetUrl(url)} alt={`Cover Preview ${idx + 1}`} style={{ width: 120, height: 80, borderRadius: 8, objectFit: 'cover' }} />
                           <Button
                             size="small"
                             danger

@@ -18,6 +18,7 @@ const {
 } = require('../services/notificationService');
 const { completeBookingPayment } = require('../services/paymentCompletionService');
 const { calculatePayableAmount, calculateVoucherDiscount } = require('../utils/pricing');
+const { getOwnedStorageKey } = require('../services/imageStorageService');
 
 const getMyProfile = async (userId, include = {}) => {
   return prisma.technicianProfile.findUnique({
@@ -286,11 +287,7 @@ const updateJobStatus = async (req, res) => {
         return error(res, 'Vui long nhap ghi chu ban giao khi hoan thanh sua chua', 400);
       }
 
-      const ownedImagePattern = new RegExp(
-        `^/uploads/${req.user.id}-\\d+-\\d+\\.(?:jpe?g|png|webp|gif)$`,
-        'i'
-      );
-      if (image_urls.some((url) => !ownedImagePattern.test(url))) {
+      if (image_urls.some((url) => !getOwnedStorageKey(url, req.user.id))) {
         return error(res, 'Anh sau sua chua khong hop le hoac khong thuoc tai khoan cua ban', 403);
       }
     } else if (image_urls.length > 0) {

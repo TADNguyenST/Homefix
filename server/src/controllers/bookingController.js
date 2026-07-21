@@ -22,6 +22,7 @@ const {
   notifyBookingCancelledToAdmins 
 } = require('../services/notificationService');
 const { calculateVoucherDiscount } = require('../utils/pricing');
+const { getOwnedStorageKey } = require('../services/imageStorageService');
 
 const getTodayDateOnly = () => {
   const now = new Date();
@@ -55,8 +56,7 @@ const createBooking = async (req, res) => {
       image_urls = [],
     } = req.body;
 
-    const ownedImagePrefix = `/uploads/${req.user.id}-`;
-    if (image_urls.some((imageUrl) => !imageUrl.startsWith(ownedImagePrefix))) {
+    if (image_urls.some((imageUrl) => !getOwnedStorageKey(imageUrl, req.user.id))) {
       return error(res, 'Anh dat lich khong hop le hoac khong thuoc tai khoan cua ban', 400);
     }
 

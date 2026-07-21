@@ -9,6 +9,22 @@ import 'dayjs/locale/vi';
 dayjs.extend(relativeTime);
 dayjs.locale('vi');
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+export const resolveAssetUrl = (rawUrl) => {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return '';
+  const url = rawUrl.trim();
+  if (/^(https?:|data:|blob:)/i.test(url)) return url;
+
+  try {
+    const browserOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    const apiOrigin = new URL(API_BASE_URL, browserOrigin).origin;
+    return new URL(url.startsWith('/') ? url : `/${url}`, apiOrigin).toString();
+  } catch {
+    return url;
+  }
+};
+
 /**
  * Format số tiền VND
  * @param {number} amount

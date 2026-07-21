@@ -15,6 +15,10 @@ const {
 } = require('../config/constants');
 const { sendTechnicianAccountEmail } = require('../utils/mailer');
 const { loadProvinces, loadProvinceWards } = require('./administrativeController');
+const {
+  getBookingDayOfWeek,
+  isSkillEligibleForService,
+} = require('../utils/technicianMatching');
 
 const summarizePaidPayments = (payments) => payments.reduce((summary, payment) => {
   const amount = Number(payment.amount || 0);
@@ -83,7 +87,7 @@ const getBookings = async (req, res) => {
           technicianProfile: {
             include: { user: { select: { id: true, full_name: true, phone: true } } },
           },
-          service: { select: { id: true, name: true, base_price: true } },
+          service: { select: { id: true, name: true, base_price: true, category_id: true } },
           payment: true,
           district: { select: { id: true, name: true } },
           ward: { select: { id: true, name: true } },
@@ -249,7 +253,9 @@ const assignTechnician = async (req, res) => {
       where: { id: technician_profile_id },
       include: {
         user: { select: { id: true, full_name: true, is_active: true, is_locked: true } },
-        skills: true,
+        skills: {
+          include: { service: { select: { id: true, category_id: true, is_active: true } } },
+        },
         schedules: true,
       },
     });
@@ -264,16 +270,15 @@ const assignTechnician = async (req, res) => {
     }
 
     // Kiểm tra skill phù hợp với service
-    const hasMatchingSkill = techProfile.skills.some(
-      (skill) => skill.service_id === booking.service_id
-    );
+    const hasMatchingSkill = techProfile.skills.some((skill) => (
+      isSkillEligibleForService(skill, booking.service)
+    ));
     if (!hasMatchingSkill) {
       return error(res, 'Kỹ thuật viên không có kỹ năng phù hợp cho dịch vụ này', 400);
     }
 
     // Kiểm tra lịch làm việc: day_of_week phải trùng ngày booking
-    const bookingDate = new Date(booking.booking_date);
-    const dayOfWeek = bookingDate.getDay(); // 0=CN, 1=T2, ..., 6=T7
+    const dayOfWeek = getBookingDayOfWeek(booking.booking_date); // 0=CN, 1=T2, ..., 6=T7
     const matchingSchedule = techProfile.schedules.find((schedule) => {
       if (schedule.day_of_week !== dayOfWeek) return false;
       // Kiểm tra giờ booking nằm trong ca làm việc
@@ -358,13 +363,18 @@ const reassignTechnician = async (req, res) => {
     if (booking.status !== BOOKING_STATUS.ASSIGNED || !booking.technician_profile_id) {
       return error(res, `Không thể chuyển thợ khi đơn ở trạng thái ${booking.status}`, 400);
     }
+    if (Number(technician_profile_id) === booking.technician_profile_id) {
+      return error(res, 'Kỹ thuật viên mới phải khác kỹ thuật viên hiện tại', 400);
+    }
 
     // Validate kỹ thuật viên mới (giống logic assign)
     const newTechProfile = await prisma.technicianProfile.findUnique({
       where: { id: technician_profile_id },
       include: {
         user: { select: { id: true, full_name: true, is_active: true, is_locked: true } },
-        skills: true,
+        skills: {
+          include: { service: { select: { id: true, category_id: true, is_active: true } } },
+        },
         schedules: true,
       },
     });
@@ -378,15 +388,14 @@ const reassignTechnician = async (req, res) => {
       return error(res, 'Kỹ thuật viên không phụ trách khu vực của đơn hàng này', 400);
     }
 
-    const hasMatchingSkill = newTechProfile.skills.some(
-      (skill) => skill.service_id === booking.service_id
-    );
+    const hasMatchingSkill = newTechProfile.skills.some((skill) => (
+      isSkillEligibleForService(skill, booking.service)
+    ));
     if (!hasMatchingSkill) {
       return error(res, 'Kỹ thuật viên không có kỹ năng phù hợp cho dịch vụ này', 400);
     }
 
-    const bookingDate = new Date(booking.booking_date);
-    const dayOfWeek = bookingDate.getDay();
+    const dayOfWeek = getBookingDayOfWeek(booking.booking_date);
     const matchingSchedule = newTechProfile.schedules.find((schedule) => {
       if (schedule.day_of_week !== dayOfWeek) return false;
       return schedule.start_time <= booking.time_slot_start && schedule.end_time >= booking.time_slot_end;
@@ -708,7 +717,7 @@ const getTechnicians = async (req, res) => {
             },
           },
           district: { select: { id: true, name: true } },
-          skills: { include: { service: { select: { id: true, name: true } } } },
+          skills: { include: { service: { select: { id: true, name: true, category_id: true, is_active: true } } } },
           schedules: true,
           _count: {
             select: {

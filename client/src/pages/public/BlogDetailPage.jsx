@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Typography, Spin, Alert, Breadcrumb, Avatar, Divider, Space } from 'antd';
 import { UserOutlined, ClockCircleOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { blogApi } from '../../api/blogApi';
-import { getInitials, stripHtmlAndTruncate } from '../../utils/helpers';
+import { getInitials, resolveAssetUrl, stripHtmlAndTruncate } from '../../utils/helpers';
 import DOMPurify from 'dompurify';
 import ImageGrid from '../../components/ImageGrid';
 
@@ -13,8 +13,6 @@ const { Title, Paragraph, Text } = Typography;
 
 export default function BlogDetailPage() {
   const { slug } = useParams();
-  const navigate = useNavigate();
-
   const { data: blogData, isLoading, isError } = useQuery({
     queryKey: ['blog', slug],
     queryFn: () => blogApi.getBlogBySlug(slug),
@@ -111,7 +109,7 @@ export default function BlogDetailPage() {
                 <Link to={`/blogs/${related.slug}`} key={related.id}>
                   <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #f0f0f0', transition: 'box-shadow 0.3s' }} className="related-blog-card">
                     {related.image_urls && related.image_urls.length > 0 ? (
-                      <img src={related.image_urls[0]} alt={related.title} style={{ width: '100%', height: 160, objectFit: 'cover' }} />
+                      <img src={resolveAssetUrl(related.image_urls[0])} alt={related.title} loading="lazy" style={{ width: '100%', height: 160, objectFit: 'cover' }} />
                     ) : (
                       <div style={{ width: '100%', height: 160, background: '#e9ecef', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#adb5bd' }}>No Image</div>
                     )}

@@ -1,4 +1,11 @@
 const prisma = require('../utils/prisma');
+const {
+  ACTIVE_TECHNICIAN_JOB_STATUSES,
+  isInspectionService,
+  getBookingDayOfWeek,
+  calculateBusinessRecommendation,
+  combineRecommendationScores,
+} = require('../utils/technicianMatching');
 
 // Khởi tạo Gemini model (lazy init, chỉ khi có API key)
 let genAI = null;
@@ -346,10 +353,11 @@ const analyzeSentiment = async (text) => {
  * @returns {Array} Top 5 kỹ thuật viên phù hợp
  */
 const recommendTechnicians = async (bookingId) => {
-  // Lấy thông tin booking kèm theo tên dịch vụ
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     select: {
+      status: true,
+      technician_profile_id: true,
       service_id: true,
       district_id: true,
       booking_date: true,
@@ -357,25 +365,32 @@ const recommendTechnicians = async (bookingId) => {
       time_slot_end: true,
       description: true,
       service: {
-        select: { name: true, category_id: true }
-      }
+        select: { id: true, name: true, category_id: true },
+      },
+      district: { select: { name: true } },
     },
   });
 
   if (!booking) {
-    throw new Error('Không tìm thấy đơn hàng');
+    const error = new Error('Không tìm thấy đơn hàng');
+    error.code = 'BOOKING_NOT_FOUND';
+    throw error;
+  }
+  if (!['CONFIRMED', 'ASSIGNED'].includes(booking.status)) {
+    const error = new Error('Chỉ gợi ý kỹ thuật viên cho đơn đã xác nhận hoặc đang được phân công');
+    error.code = 'BOOKING_NOT_ASSIGNABLE';
+    throw error;
   }
 
-  const bookingDate = new Date(booking.booking_date);
-  const dayOfWeek = bookingDate.getDay(); // 0=CN, 1=T2, ..., 6=T7
-  const isInspectionService = booking.service?.name.toLowerCase().startsWith('khảo sát');
-  const matchingSkillWhere = isInspectionService
+  const dayOfWeek = getBookingDayOfWeek(booking.booking_date);
+  const inspectionBooking = isInspectionService(booking.service);
+  const matchingSkillWhere = inspectionBooking
     ? { service: { category_id: booking.service.category_id, is_active: true } }
     : { service_id: booking.service_id };
 
-  // Tìm kỹ thuật viên có skill phù hợp, available, có lịch vào ngày booking
   const technicians = await prisma.technicianProfile.findMany({
     where: {
+      ...(booking.technician_profile_id && { id: { not: booking.technician_profile_id } }),
       is_available: true,
       user: { is_active: true, is_locked: false },
       OR: [
@@ -396,7 +411,7 @@ const recommendTechnicians = async (bookingId) => {
         none: {
           id: { not: bookingId },
           booking_date: booking.booking_date,
-          status: { in: ['ASSIGNED', 'IN_PROGRESS', 'INSPECTING', 'QUOTED', 'COMPLETING'] },
+          status: { in: ACTIVE_TECHNICIAN_JOB_STATUSES },
           time_slot_start: { lt: booking.time_slot_end },
           time_slot_end: { gt: booking.time_slot_start },
         },
@@ -407,30 +422,34 @@ const recommendTechnicians = async (bookingId) => {
       district: { select: { id: true, name: true } },
       skills: {
         where: matchingSkillWhere,
-        include: { service: { select: { id: true, name: true } } },
+        include: { service: { select: { id: true, name: true, category_id: true, is_active: true } } },
       },
       schedules: {
         where: { day_of_week: dayOfWeek },
       },
+      _count: {
+        select: {
+          bookings: { where: { status: { in: ACTIVE_TECHNICIAN_JOB_STATUSES } } },
+        },
+      },
     },
   });
 
-  // Ánh xạ skill_level sang số để dùng cho fallback hoặc kết hợp
-  const skillLevelOrder = { EXPERT: 3, INTERMEDIATE: 2, BEGINNER: 1 };
-
-  // Chuẩn bị danh sách thợ ban đầu kèm theo các trường bổ sung
   let candidates = technicians.map((tech) => {
-    const matchingSkill = tech.skills[0];
+    const business = calculateBusinessRecommendation(tech, booking);
     return {
       ...tech,
-      _skill_level_order: skillLevelOrder[matchingSkill?.skill_level] || 0,
-      _same_district: tech.district_id === booking.district_id || tech.district_id === null,
-      ai_score: null,
-      ai_reason: null,
+      active_jobs: business.activeJobs,
+      business_score: business.score,
+      gemini_score: null,
+      ai_score: business.score,
+      ai_reason: business.reason,
+      recommendation_source: 'BUSINESS_RULES',
+      _skill_level_order: business.skillOrder,
+      _same_district: business.sameDistrict,
     };
   });
 
-  // Thử gọi Gemini AI nếu sẵn sàng và có danh sách ứng viên
   const isAiReady = tryInitGemini();
   if (isAiReady && candidates.length > 0) {
     try {
@@ -441,6 +460,8 @@ const recommendTechnicians = async (bookingId) => {
   Cấp độ kỹ năng cho dịch vụ này: ${matchingSkill?.skill_level || 'N/A'}
   Đánh giá trung bình: ${t.avg_rating} sao
   Tổng số đơn đã làm: ${t.total_completed_jobs}
+  Số việc đang xử lý: ${t.active_jobs}
+  Điểm luật nghiệp vụ: ${t.business_score}/100
   Khu vực đăng ký: ${t.district?.name || 'Toàn thành phố'}`;
       }).join('\n\n');
 
@@ -450,16 +471,17 @@ Nhiệm vụ của bạn là đánh giá sự phù hợp của các kỹ thuật
 THÔNG TIN ĐƠN ĐẶT LỊCH:
 - Dịch vụ yêu cầu: ${booking.service?.name}
 - Mô tả sự cố của khách hàng: "${booking.description}"
-- Khu vực yêu cầu: Quận ${booking.district_id}
+- Khu vực yêu cầu: ${booking.district?.name || `Khu vực #${booking.district_id}`}
 
 DANH SÁCH KỸ THUẬT VIÊN KHẢ DỤNG:
 ${techListString}
 
 YÊU CẦU:
-1. Đánh giá mức độ phù hợp của từng kỹ thuật viên dựa trên kỹ năng, kinh nghiệm, đánh giá và khối lượng công việc đã hoàn thành.
+1. Đánh giá mức độ phù hợp dựa trên kỹ năng, kinh nghiệm, đánh giá, khu vực và số việc đang xử lý.
 2. Cho điểm độ phù hợp (ai_score) từ 0 đến 100 cho mỗi người.
 3. Viết một lý do ngắn gọn bằng tiếng Việt (ai_reason, tối đa 2 câu) giải thích tại sao thợ này phù hợp (ví dụ: kinh nghiệm dày dặn với loại lỗi này, đánh giá sao cao từ khách hàng trước...).
-4. Trả về đúng định dạng JSON yêu cầu.`;
+4. Không đề xuất ID ngoài danh sách và không thay đổi các điều kiện khả dụng đã được hệ thống lọc.
+5. Trả về đúng định dạng JSON yêu cầu.`;
 
       const generationConfig = {
         responseMimeType: "application/json",
@@ -496,62 +518,37 @@ YÊU CẦU:
           .map((recommendation) => normalizeRecommendation(recommendation, validTechnicianIds))
           .filter(Boolean)
         : [];
+      const recommendationsById = new Map(recs.map((recommendation) => [recommendation.technician_id, recommendation]));
 
-      // Map kết quả AI trả về vào danh sách ứng viên
       candidates = candidates.map(tech => {
-        const match = recs.find(r => Number(r.technician_id) === tech.id);
+        const match = recommendationsById.get(tech.id);
         if (match) {
           return {
             ...tech,
-            ai_score: match.ai_score,
-            ai_reason: match.ai_reason,
+            gemini_score: match.ai_score,
+            ai_score: combineRecommendationScores(tech.business_score, match.ai_score),
+            ai_reason: `${match.ai_reason} ${tech.ai_reason}`.trim(),
+            recommendation_source: 'GEMINI_ASSISTED',
           };
         }
         return tech;
       });
     } catch (err) {
       console.error('[AI Service] recommendTechnicians AI error:', err.message);
-      // Tiếp tục chạy để fallback xuống rule-based nếu AI bị lỗi
+      // Nếu Gemini lỗi, danh sách vẫn được xếp hạng bằng luật nghiệp vụ.
     }
   }
 
-  // Sắp xếp: Ưu tiên thợ có điểm AI trước, sau đó là rule-based fallback
-  const sorted = candidates.sort((a, b) => {
-    // Nếu cả hai đều có điểm AI, sắp xếp theo điểm AI giảm dần
-    if (a.ai_score !== null && b.ai_score !== null) {
-      return b.ai_score - a.ai_score;
-    }
-    // Ưu tiên người có điểm AI hơn người không có (nếu có lỗi map)
-    if (a.ai_score !== null) return -1;
-    if (b.ai_score !== null) return 1;
-
-    // Fallback sắp xếp theo luật cũ
+  candidates.sort((a, b) => {
+    if (b.ai_score !== a.ai_score) return b.ai_score - a.ai_score;
     if (a._same_district && !b._same_district) return -1;
     if (!a._same_district && b._same_district) return 1;
     if (b._skill_level_order !== a._skill_level_order) return b._skill_level_order - a._skill_level_order;
-    return Number(b.avg_rating) - Number(a.avg_rating);
+    if (Number(b.avg_rating) !== Number(a.avg_rating)) return Number(b.avg_rating) - Number(a.avg_rating);
+    return a.active_jobs - b.active_jobs;
   });
 
-  // Nếu thợ không có điểm AI (do fallback), gán điểm và nhận xét mặc định
-  const finalResult = sorted.map(tech => {
-    if (tech.ai_score === null) {
-      const calculatedScore = Math.min(
-        30 + tech._skill_level_order * 10 +
-        Math.round(Number(tech.avg_rating) * 6) +
-        Math.min(10, Math.round(tech.total_completed_jobs / 10)),
-        100
-      );
-      return {
-        ...tech,
-        ai_score: calculatedScore,
-        ai_reason: `Gợi ý tự động dựa trên trình độ ${tech.skills[0]?.skill_level || 'khả dụng'} và đánh giá (${tech.avg_rating} sao).`
-      };
-    }
-    return tech;
-  });
-
-  // Lấy Top 5 và làm sạch các trường temp
-  return finalResult
+  return candidates
     .slice(0, 5)
     .map(({ _skill_level_order, _same_district, ...tech }) => tech);
 };

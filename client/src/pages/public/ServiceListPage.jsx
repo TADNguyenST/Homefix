@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Typography, Row, Col, Card, Spin, Empty, Input, Select, Button, Space, Pagination } from 'antd';
+import { Typography, Row, Col, Card, Spin, Empty, Input, Select, Button, Pagination } from 'antd';
 import { SearchOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { serviceApi } from '../../api/serviceApi';
 import { useNavigate } from 'react-router-dom';
-import { formatVND } from '../../utils/helpers';
+import { formatVND, resolveAssetUrl } from '../../utils/helpers';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -93,7 +93,7 @@ export default function ServiceListPage() {
                       <div style={{ height: 200, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <img
                           alt={service.name}
-                          src={service.image_url}
+                          src={resolveAssetUrl(service.image_url)}
                           style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         />
                       </div>
