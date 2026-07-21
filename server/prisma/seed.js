@@ -99,6 +99,7 @@ async function main() {
         { name: 'Sửa máy lạnh không lạnh', price: 300000, duration: 90 },
         { name: 'Sửa máy lạnh chảy nước', price: 250000, duration: 75 },
         { name: 'Nạp gas máy lạnh R32/R410A', price: 350000, duration: 60 },
+        { name: 'Khảo sát điện lạnh', price: 150000, duration: 45 },
       ],
     },
     {
@@ -109,6 +110,7 @@ async function main() {
         { name: 'Sửa máy giặt không vắt', price: 300000, duration: 90 },
         { name: 'Vệ sinh lồng máy giặt', price: 220000, duration: 75 },
         { name: 'Sửa máy sấy không nóng', price: 320000, duration: 90 },
+        { name: 'Khảo sát thiết bị giặt sấy', price: 150000, duration: 45 },
       ],
     },
     {
@@ -119,6 +121,7 @@ async function main() {
         { name: 'Sửa tủ lạnh chảy nước', price: 280000, duration: 75 },
         { name: 'Sửa bếp từ không lên nguồn', price: 300000, duration: 90 },
         { name: 'Sửa máy hút mùi kêu to', price: 250000, duration: 75 },
+        { name: 'Khảo sát thiết bị bếp', price: 150000, duration: 45 },
       ],
     },
     {
@@ -129,6 +132,7 @@ async function main() {
         { name: 'Thay ổ cắm hoặc công tắc điện', price: 150000, duration: 45 },
         { name: 'Sửa quạt điện không quay', price: 180000, duration: 60 },
         { name: 'Sửa bình nóng lạnh không nóng', price: 300000, duration: 90 },
+        { name: 'Khảo sát điện gia dụng', price: 150000, duration: 45 },
       ],
     },
     {
@@ -139,6 +143,7 @@ async function main() {
         { name: 'Thay vòi nước hoặc vòi sen', price: 180000, duration: 60 },
         { name: 'Thông nghẹt lavabo', price: 220000, duration: 60 },
         { name: 'Sửa bồn cầu xả yếu hoặc rò nước', price: 280000, duration: 75 },
+        { name: 'Khảo sát cấp thoát nước', price: 150000, duration: 45 },
       ],
     },
   ];

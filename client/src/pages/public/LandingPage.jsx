@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Row, Col, Card, Typography, Space, Avatar, Input, Spin, Alert, List, Tag, message } from 'antd';
+import { Button, Row, Col, Card, Typography, Space, Avatar, Input, Alert, Tag, message } from 'antd';
 import {
   ArrowRightOutlined,
   ToolOutlined,
@@ -8,7 +8,6 @@ import {
   CheckCircleFilled,
   StarFilled,
   RobotOutlined,
-  InfoCircleOutlined,
   SafetyOutlined,
   CompassOutlined,
   FileTextOutlined,
@@ -37,9 +36,9 @@ export default function LandingPage() {
   const [errorMessage, setErrorMessage] = useState('');
 
   // Fetch services to matching recommended IDs
-  const { data: servicesData, isLoading: loadingServices } = useQuery({
+  const { data: servicesData } = useQuery({
     queryKey: ['public-services'],
-    queryFn: () => serviceApi.getPublicServices()
+    queryFn: () => serviceApi.getAll({ limit: 100 })
   });
 
   const { data: blogsData } = useQuery({
@@ -70,16 +69,6 @@ export default function LandingPage() {
     const promptText = textToUse || problemText;
     if (!promptText || promptText.length < 10) {
       message.warning('Vui lòng mô tả chi tiết sự cố (ít nhất 10 ký tự) để hệ thống chẩn đoán chính xác.');
-      return;
-    }
-
-    // Tiền kiểm tra nội dung rác/không liên quan
-    const keywords = ['máy', 'lạnh', 'điều hòa', 'giặt', 'sấy', 'tủ', 'bếp', 'hút', 'điện', 'nước', 'quạt', 'cháy', 'chập', 'hư', 'hỏng', 'lỗi', 'không chạy', 'không lên', 'kêu', 'rò', 'nghẹt', 'tắc', 'vòi', 'bồn', 'toilet', 'ống', 'cắm', 'công tắc', 'cầu dao', 'aptomat', 'bơm', 'van', 'lavabo', 'chảy', 'xì', 'xả', 'đèn', 'sửa', 'thay', 'lắp', 'kiểm', 'khét', 'nóng', 'bật', 'tắt', 'mùi', 'kẹt', 'vỡ', 'gãy', 'nổ'];
-    const descLower = promptText.toLowerCase();
-    const hasKeyword = keywords.some(kw => descLower.includes(kw));
-
-    if (!hasKeyword) {
-      setErrorMessage('Nội dung không hợp lệ! Vui lòng mô tả đúng sự cố liên quan đến điện nước, điện lạnh, gia dụng...');
       return;
     }
 
@@ -299,7 +288,9 @@ export default function LandingPage() {
                 <div style={{ padding: '16px 24px', background: 'rgba(30, 41, 59, 0.8)', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <RobotOutlined style={{ color: '#fbbf24', fontSize: 18 }} />
-                    <Text strong style={{ color: '#fcd34d', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>Bản Chẩn Đoán AI</Text>
+                    <Text strong style={{ color: '#fcd34d', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1 }}>
+                      Bản Chẩn Đoán Gemini {aiResult.model ? `• ${aiResult.model}` : ''}
+                    </Text>
                   </div>
                   <Tag color={aiResult.severity === 'HIGH' || aiResult.severity === 'CRITICAL' ? '#ef4444' : '#f59e0b'} style={{ border: 'none', fontWeight: 600, padding: '4px 12px', borderRadius: 20 }}>
                     Mức độ: {aiResult.severity}
@@ -307,6 +298,15 @@ export default function LandingPage() {
                 </div>
 
                 <div style={{ padding: 24 }}>
+                  {aiResult.requires_inspection && (
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 20, borderRadius: 12 }}
+                      message="Cần khảo sát thực tế trước khi sửa chữa"
+                      description="Chưa có dịch vụ sửa tiêu chuẩn khớp hoàn toàn. Kỹ thuật viên đúng chuyên môn sẽ kiểm tra, báo giá và chỉ sửa khi bạn xác nhận."
+                    />
+                  )}
                   <Row gutter={[24, 24]}>
                     {/* Cột Trái: Chẩn đoán */}
                     <Col xs={24} md={13}>
@@ -356,7 +356,9 @@ export default function LandingPage() {
                         {/* Dịch vụ đề xuất */}
                         {aiResult.service_id && (
                           <div style={{ marginTop: 'auto', paddingTop: 16 }}>
-                            <Text style={{ fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', fontWeight: 700, letterSpacing: 1, display: 'block', marginBottom: 8 }}>Dịch Vụ Khuyên Dùng</Text>
+                            <Text style={{ fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', fontWeight: 700, letterSpacing: 1, display: 'block', marginBottom: 8 }}>
+                              {aiResult.requires_inspection ? 'Dịch Vụ Khảo Sát Phù Hợp' : 'Dịch Vụ Khuyên Dùng'}
+                            </Text>
                             <div style={{ background: '#1e293b', padding: 16, borderRadius: 12, border: '1px solid #334155' }}>
                               <Text strong style={{ color: '#f8fafc', fontSize: 14, display: 'block', marginBottom: 4 }}>
                                 {services.find(s => s.id === aiResult.service_id)?.name || 'Dịch vụ sửa chữa tại nhà'}
@@ -370,7 +372,7 @@ export default function LandingPage() {
                                   onClick={() => handleBookSuggested(aiResult.service_id)}
                                   style={{ background: '#f59e0b', borderColor: '#f59e0b', color: '#111827', fontWeight: 700, borderRadius: 8, fontSize: 12, height: 32 }}
                                 >
-                                  Đặt lịch với gợi ý này <ArrowRightOutlined />
+                                  {aiResult.requires_inspection ? 'Đặt lịch khảo sát' : 'Đặt lịch với gợi ý này'} <ArrowRightOutlined />
                                 </Button>
                               </div>
                             </div>
