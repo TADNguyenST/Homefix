@@ -25,7 +25,9 @@ const app = express();
 app.use(cors());
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan('dev'));
-app.use(express.json());
+// AI diagnosis accepts one compressed base64 image. Express defaults to 100 KB,
+// which rejects most phone photos before the request reaches the AI controller.
+app.use(express.json({ limit: '5mb' }));
 
 // Serve uploaded images as static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

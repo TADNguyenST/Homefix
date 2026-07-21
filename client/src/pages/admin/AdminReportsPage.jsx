@@ -15,6 +15,8 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
 import { formatVND, formatDate } from '../../utils/helpers';
 import dayjs from 'dayjs';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import { 
   BarChart, 
   Bar, 
@@ -170,62 +172,144 @@ export default function AdminReportsPage() {
     return payments.filter(p => p.booking?.customer?.id === selectedCustomerId);
   }, [selectedCustomerId, payments]);
 
-  // Xuất file CSV báo cáo chi tiết
-  const handleExportCSV = () => {
+  // Xuất file Excel báo cáo chi tiết
+  const handleExportExcel = async () => {
     if (!payments.length) {
       message.warning('Không có dữ liệu để xuất!');
       return;
     }
 
-    let csvContent = 'Mã đơn,Ngày thanh toán,Khách hàng,Dịch vụ,Thợ phụ trách,Phương thức,Trạng thái,Số tiền\n';
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Doanh Thu');
+
+    // Cấu hình cột
+    worksheet.columns = [
+      { key: 'id', width: 35 },
+      { key: 'date', width: 22 },
+      { key: 'customer', width: 25 },
+      { key: 'service', width: 40 },
+      { key: 'tech', width: 25 },
+      { key: 'method', width: 15 },
+      { key: 'status', width: 15 },
+      { key: 'amount', width: 18 }
+    ];
+
+    // Thêm Tiêu đề
+    worksheet.addRow([]);
+    const titleRow = worksheet.addRow(['BÁO CÁO DOANH THU']);
+    titleRow.font = { bold: true, size: 16 };
+    worksheet.mergeCells('A2:H2');
+    titleRow.getCell(1).alignment = { horizontal: 'center' };
+
+    let subtitle = 'Toàn thời gian';
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      const startStr = dateRange[0].format('DD/MM/YYYY');
+      const endStr = dateRange[1].format('DD/MM/YYYY');
+      subtitle = `Từ ngày ${startStr} đến ngày ${endStr}`;
+    }
+    const subtitleRow = worksheet.addRow([subtitle]);
+    subtitleRow.font = { italic: true, size: 12 };
+    worksheet.mergeCells('A3:H3');
+    subtitleRow.getCell(1).alignment = { horizontal: 'center' };
+
+    worksheet.addRow([]); // Dòng trống
+
+    // Header Bảng
+    const headerRow = worksheet.addRow([
+      'Mã đơn', 'Ngày thanh toán', 'Khách hàng', 'Dịch vụ', 
+      'Thợ phụ trách', 'Phương thức', 'Trạng thái', 'Số tiền'
+    ]);
+
+    // Style Header
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF107C41' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin' }, left: { style: 'thin' },
+        bottom: { style: 'thin' }, right: { style: 'thin' }
+      };
+    });
+
     const techRevenue = {};
 
     payments.forEach((p) => {
-      const id = p.booking?.id || 'N/A';
-      const dateStr = p.paid_at ? formatDate(p.paid_at) : 'N/A';
-      const date = p.paid_at ? `="${dateStr}"` : 'N/A';
-      const customer = p.booking?.customer?.full_name ? `"${p.booking.customer.full_name}"` : 'N/A';
-      const service = p.booking?.service?.name ? `"${p.booking.service.name}"` : 'N/A';
       const techName = p.booking?.technicianProfile?.user?.full_name || 'N/A';
-      const tech = `"${techName}"`;
-      const method = p.method || 'N/A';
-      const status = p.status || 'N/A';
-      const amount = p.amount || 0;
+      const amount = Number(p.amount || 0);
 
       if (techName !== 'N/A') {
-        techRevenue[techName] = (techRevenue[techName] || 0) + Number(amount);
+        techRevenue[techName] = (techRevenue[techName] || 0) + amount;
       }
 
-      csvContent += `${id},${date},${customer},${service},${tech},${method},${status},${amount}\n`;
+      const row = worksheet.addRow({
+        id: p.booking?.id || 'N/A',
+        date: p.paid_at ? formatDate(p.paid_at) : 'N/A',
+        customer: p.booking?.customer?.full_name || 'N/A',
+        service: p.booking?.service?.name || 'N/A',
+        tech: techName,
+        method: p.method || 'N/A',
+        status: p.status || 'N/A',
+        amount: amount
+      });
+
+      row.getCell('amount').numFmt = '#,##0"đ"';
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        cell.border = {
+          top: { style: 'thin' }, left: { style: 'thin' },
+          bottom: { style: 'thin' }, right: { style: 'thin' }
+        };
+      });
     });
 
-    csvContent += `\n`;
-    csvContent += `TỔNG QUAN DOANH THU\n`;
-    csvContent += `Tổng doanh thu,,,,,,,${summary.total_revenue || 0}\n`;
-    csvContent += `Doanh thu VNPAY,,,,,,,${summary.vnpay_received || 0}\n`;
-    csvContent += `Doanh thu Tiền mặt,,,,,,,${summary.cash_collected || 0}\n`;
-    csvContent += `Tiền mặt thợ giữ (Pending),,,,,,,${summary.cash_pending || 0}\n`;
-    csvContent += `Tiền mặt đã thu (Settled),,,,,,,${summary.cash_settled || 0}\n`;
+    // Thêm các dòng trống phân cách
+    worksheet.addRow([]);
+    worksheet.addRow([]);
 
-    csvContent += `\n`;
+    // Tổng quan doanh thu
+    const summaryHeader = worksheet.addRow(['TỔNG QUAN DOANH THU']);
+    summaryHeader.font = { bold: true, size: 14 };
+    
+    const addSummaryRow = (label, value) => {
+      const row = worksheet.addRow([label, '', '', '', '', '', '', value]);
+      row.getCell(8).numFmt = '#,##0"đ"';
+      row.getCell(1).font = { bold: true };
+    };
 
+    addSummaryRow('Tổng doanh thu', summary.total_revenue || 0);
+    addSummaryRow('Doanh thu VNPAY', summary.vnpay_received || 0);
+    addSummaryRow('Doanh thu Tiền mặt', summary.cash_collected || 0);
+    addSummaryRow('Tiền mặt thợ giữ (Pending)', summary.cash_pending || 0);
+    addSummaryRow('Tiền mặt đã thu (Settled)', summary.cash_settled || 0);
+
+    // Thống kê theo kỹ thuật viên
     if (Object.keys(techRevenue).length > 0) {
-      csvContent += `THỐNG KÊ THEO KỸ THUẬT VIÊN\n`;
-      csvContent += `Kỹ thuật viên,Tổng doanh thu\n`;
+      worksheet.addRow([]);
+      const techHeader = worksheet.addRow(['THỐNG KÊ THEO KỸ THUẬT VIÊN']);
+      techHeader.font = { bold: true, size: 14 };
+      
+      const techColHeader = worksheet.addRow(['Kỹ thuật viên', 'Tổng doanh thu']);
+      techColHeader.font = { bold: true };
+      techColHeader.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+      techColHeader.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+
       Object.entries(techRevenue).sort((a, b) => b[1] - a[1]).forEach(([name, rev]) => {
-        csvContent += `"${name}",${rev}\n`;
+        const row = worksheet.addRow([name, rev]);
+        row.getCell(2).numFmt = '#,##0"đ"';
       });
     }
 
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `bao_cao_doanh_thu_${dayjs().format('YYYYMMDD')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    // Xuất file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    
+    let fileName = 'Bao_cao_doanh_thu_toan_thoi_gian.xlsx';
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      const startStr = dateRange[0].format('DD-MM-YYYY');
+      const endStr = dateRange[1].format('DD-MM-YYYY');
+      fileName = `Bao_cao_doanh_thu_tu_${startStr}_den_${endStr}.xlsx`;
+    }
+
+    saveAs(blob, fileName);
   };
 
   // Cấu hình cột bảng giao dịch chi tiết
@@ -886,7 +970,7 @@ export default function AdminReportsPage() {
             type="primary" 
             style={{ background: '#107c41', borderColor: '#107c41' }} 
             icon={<DownloadOutlined />} 
-            onClick={handleExportCSV}
+            onClick={handleExportExcel}
           >
             Xuất file Excel
           </Button>

@@ -263,9 +263,7 @@ const assignTechSchema = z.object({
 
 const aiDiagnoseSchema = z.object({
   description: z.string().min(10, 'Mô tả sự cố tối thiểu 10 ký tự').max(2000),
-  base64_image: z.string().optional().nullable(),
-  booking_id: z.number().int().positive().optional().nullable(),
-  image_urls: z.array(z.string().url()).optional().default([]),
+  base64_image: z.string().max(5_000_000, 'Ảnh phân tích quá lớn').optional().nullable(),
 });
 
 // ========================
