@@ -19,6 +19,11 @@ const {
   getBookingDayOfWeek,
   isSkillEligibleForService,
 } = require('../utils/technicianMatching');
+const {
+  parseDateOnly,
+  validateVoucherBusinessRules,
+  validateVoucherActivation,
+} = require('../utils/voucherRules');
 
 const summarizePaidPayments = (payments) => payments.reduce((summary, payment) => {
   const amount = Number(payment.amount || 0);
@@ -1558,31 +1563,29 @@ const createVoucher = async (req, res) => {
       max_discount, usage_limit, start_date, end_date, is_active,
     } = req.body;
 
-    // Validate code unique
     const existing = await prisma.voucher.findUnique({ where: { code } });
     if (existing) return error(res, 'Mã voucher đã tồn tại', 400);
 
-    // Validate start_date < end_date
-    if (new Date(start_date) >= new Date(end_date)) {
-      return error(res, 'Ngày bắt đầu phải trước ngày kết thúc', 400);
-    }
+    const businessErrors = validateVoucherBusinessRules(req.body);
+    if (businessErrors.length) return error(res, businessErrors[0].message, 400);
 
     const voucher = await prisma.voucher.create({
       data: {
         code,
         discount_type,
         discount_value,
-        min_order_amount: min_order_amount || 0,
-        max_discount,
+        min_order_amount: min_order_amount ?? 0,
+        max_discount: discount_type === 'PERCENTAGE' ? (max_discount ?? null) : null,
         usage_limit,
-        start_date: new Date(start_date),
-        end_date: new Date(end_date),
+        start_date: parseDateOnly(start_date),
+        end_date: parseDateOnly(end_date),
         is_active: is_active !== undefined ? is_active : true,
       },
     });
     return success(res, voucher, 'Tạo voucher thành công', 201);
   } catch (err) {
     console.error('createVoucher error:', err);
+    if (err.code === 'P2002') return error(res, 'Mã voucher đã tồn tại', 400);
     return error(res, 'Không thể tạo voucher', 500);
   }
 };
@@ -1592,37 +1595,44 @@ const createVoucher = async (req, res) => {
  */
 const updateVoucher = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) return error(res, 'Mã voucher không hợp lệ', 400);
     const {
       code, discount_type, discount_value, min_order_amount,
       max_discount, usage_limit, start_date, end_date, is_active,
     } = req.body;
 
-    // Nếu đổi code, kiểm tra trùng
+    const currentVoucher = await prisma.voucher.findUnique({ where: { id } });
+    if (!currentVoucher) return error(res, 'Voucher không tồn tại', 404);
+
     if (code) {
       const existing = await prisma.voucher.findFirst({
-        where: { code, id: { not: parseInt(id) } },
+        where: { code, id: { not: id } },
       });
       if (existing) return error(res, 'Mã voucher đã tồn tại', 400);
     }
 
+    const businessErrors = validateVoucherBusinessRules(req.body, { existingVoucher: currentVoucher });
+    if (businessErrors.length) return error(res, businessErrors[0].message, 400);
+
     const voucher = await prisma.voucher.update({
-      where: { id: parseInt(id) },
+      where: { id },
       data: {
         ...(code !== undefined && { code }),
         ...(discount_type !== undefined && { discount_type }),
         ...(discount_value !== undefined && { discount_value }),
         ...(min_order_amount !== undefined && { min_order_amount }),
-        ...(max_discount !== undefined && { max_discount }),
+        max_discount: discount_type === 'PERCENTAGE' ? (max_discount ?? null) : null,
         ...(usage_limit !== undefined && { usage_limit }),
-        ...(start_date !== undefined && { start_date: new Date(start_date) }),
-        ...(end_date !== undefined && { end_date: new Date(end_date) }),
+        ...(start_date !== undefined && { start_date: parseDateOnly(start_date) }),
+        ...(end_date !== undefined && { end_date: parseDateOnly(end_date) }),
         ...(is_active !== undefined && { is_active }),
       },
     });
     return success(res, voucher, 'Cập nhật voucher thành công');
   } catch (err) {
     console.error('updateVoucher error:', err);
+    if (err.code === 'P2002') return error(res, 'Mã voucher đã tồn tại', 400);
     return error(res, 'Không thể cập nhật voucher', 500);
   }
 };
@@ -1633,12 +1643,18 @@ const updateVoucher = async (req, res) => {
  */
 const toggleVoucher = async (req, res) => {
   try {
-    const { id } = req.params;
-    const voucher = await prisma.voucher.findUnique({ where: { id: parseInt(id) } });
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) return error(res, 'Mã voucher không hợp lệ', 400);
+    const voucher = await prisma.voucher.findUnique({ where: { id } });
     if (!voucher) return error(res, 'Voucher không tồn tại', 404);
 
+    if (!voucher.is_active) {
+      const activationError = validateVoucherActivation(voucher);
+      if (activationError) return error(res, activationError, 400);
+    }
+
     const updated = await prisma.voucher.update({
-      where: { id: parseInt(id) },
+      where: { id },
       data: { is_active: !voucher.is_active },
     });
     return success(res, updated, `Voucher đã được ${updated.is_active ? 'kích hoạt' : 'vô hiệu hóa'}`);
@@ -2391,9 +2407,10 @@ const getRevenueReport = async (req, res) => {
 
     const start = startDate ? new Date(startDate) : new Date('2000-01-01');
     const end = endDate ? new Date(endDate) : new Date();
-    if (endDate) {
-      end.setHours(23, 59, 59, 999);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return error(res, 'Khoảng thời gian báo cáo không hợp lệ', 400);
     }
+    if (start > end) return error(res, 'Ngày bắt đầu không được sau ngày kết thúc', 400);
 
     // 1. Tính toán summary gọn nhẹ (chỉ chọn trường cần thiết)
     const paidPaymentsSummary = await prisma.payment.findMany({

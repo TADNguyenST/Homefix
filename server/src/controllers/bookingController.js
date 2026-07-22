@@ -22,12 +22,10 @@ const {
   notifyBookingCancelledToAdmins 
 } = require('../services/notificationService');
 const { calculateVoucherDiscount } = require('../utils/pricing');
+const { getVietnamDateString, parseDateOnly } = require('../utils/voucherRules');
 const { getOwnedStorageKey } = require('../services/imageStorageService');
 
-const getTodayDateOnly = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-};
+const getTodayDateOnly = () => parseDateOnly(getVietnamDateString());
 
 const isValidBookingSlot = (timeSlotStart, timeSlotEnd) =>
   BUSINESS_RULES.BOOKING_TIME_SLOTS.some(

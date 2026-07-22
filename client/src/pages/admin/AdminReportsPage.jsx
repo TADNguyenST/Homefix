@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Card, DatePicker, Button, Table, Typography, Statistic, Row, Col, message, Tabs, Space, Alert } from 'antd';
 import { 
-  DownloadOutlined, 
+  FileExcelOutlined,
+  FilePdfOutlined,
   BarChartOutlined, 
   WalletOutlined, 
   CreditCardOutlined, 
@@ -15,6 +16,8 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
 import { formatVND, formatDate } from '../../utils/helpers';
 import dayjs from 'dayjs';
+import ReportExportDocument from '../../components/reports/ReportExportDocument';
+import { exportReportExcel, exportReportPdf } from '../../utils/reportExport';
 import { 
   BarChart, 
   Bar, 
@@ -98,9 +101,11 @@ export default function AdminReportsPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [selectedCustomerName, setSelectedCustomerName] = useState('');
+  const [exportingType, setExportingType] = useState(null);
+  const reportExportRef = useRef(null);
 
-  const startDate = dateRange?.[0]?.toISOString();
-  const endDate = dateRange?.[1]?.toISOString();
+  const startDate = dateRange?.[0]?.startOf('day').toISOString();
+  const endDate = dateRange?.[1]?.endOf('day').toISOString();
 
   // Gọi API Báo cáo đã tối ưu hoá từ Backend
   const { data: reportData, isLoading } = useQuery({
@@ -226,6 +231,51 @@ export default function AdminReportsPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const exportReportData = useMemo(() => ({
+    summary,
+    dailyStats,
+    serviceStats: serviceStatsParsed,
+    districtStats: districtStatsParsed,
+    technicianStats: technicianStatsParsed,
+    customerStats: customerStatsParsed,
+    quotationItemStats: quotationStatsParsed,
+    payments,
+  }), [
+    summary,
+    dailyStats,
+    serviceStatsParsed,
+    districtStatsParsed,
+    technicianStatsParsed,
+    customerStatsParsed,
+    quotationStatsParsed,
+    payments,
+  ]);
+
+  const handleExport = async (type) => {
+    if (isLoading) {
+      message.warning('Dữ liệu báo cáo vẫn đang được tải');
+      return;
+    }
+
+    setExportingType(type);
+    try {
+      if (type === 'excel') {
+        await exportReportExcel({ report: exportReportData, dateRange });
+        message.success('Đã xuất báo cáo Excel đầy đủ');
+      } else if (type === 'pdf') {
+        await exportReportPdf({ root: reportExportRef.current, dateRange });
+        message.success('Đã xuất báo cáo PDF');
+      } else {
+        handleExportCSV();
+      }
+    } catch (exportError) {
+      console.error('Export report error:', exportError);
+      message.error(exportError.message || 'Không thể xuất báo cáo');
+    } finally {
+      setExportingType(null);
+    }
   };
 
   // Cấu hình cột bảng giao dịch chi tiết
@@ -882,13 +932,24 @@ export default function AdminReportsPage() {
             allowClear={false}
             style={{ minWidth: 260 }}
           />
-          <Button 
-            type="primary" 
-            style={{ background: '#107c41', borderColor: '#107c41' }} 
-            icon={<DownloadOutlined />} 
-            onClick={handleExportCSV}
+          <Button
+            type="primary"
+            style={{ background: '#107c41', borderColor: '#107c41' }}
+            icon={<FileExcelOutlined />}
+            loading={exportingType === 'excel'}
+            disabled={Boolean(exportingType)}
+            onClick={() => handleExport('excel')}
           >
-            Xuất file Excel
+            Xuất Excel
+          </Button>
+          <Button
+            danger
+            icon={<FilePdfOutlined />}
+            loading={exportingType === 'pdf'}
+            disabled={Boolean(exportingType)}
+            onClick={() => handleExport('pdf')}
+          >
+            Xuất PDF
           </Button>
         </div>
       </div>
@@ -949,6 +1010,7 @@ export default function AdminReportsPage() {
         items={tabItems}
         style={{ marginBottom: 24 }}
       />
+      <ReportExportDocument ref={reportExportRef} report={exportReportData} dateRange={dateRange} />
     </div>
   );
 }

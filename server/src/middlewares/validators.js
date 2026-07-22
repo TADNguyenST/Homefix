@@ -4,6 +4,7 @@
 // ============================================================
 
 const { z } = require('zod');
+const { parseDateOnly } = require('../utils/voucherRules');
 
 const TEMP_EMAIL_DOMAINS = [
   'yopmail.com', '10minutemail.com', 'mailinator.com', 
@@ -223,14 +224,19 @@ const createWardSchema = z.object({ external_code: z.number().int().positive() }
 const updateWardSchema = z.object({ is_active: z.boolean() });
 
 const createVoucherSchema = z.object({
-  code: z.string().min(3, 'Mã voucher tối thiểu 3 ký tự').max(50).toUpperCase(),
+  code: z.string()
+    .trim()
+    .min(3, 'Mã voucher tối thiểu 3 ký tự')
+    .max(50, 'Mã voucher tối đa 50 ký tự')
+    .regex(/^[A-Za-z0-9_-]+$/, 'Mã voucher chỉ gồm chữ, số, dấu gạch ngang hoặc gạch dưới')
+    .transform((value) => value.toUpperCase()),
   discount_type: z.enum(['PERCENTAGE', 'FIXED']),
   discount_value: z.number().min(1, 'Giá trị giảm phải > 0'),
   min_order_amount: z.number().min(0).optional().default(0),
-  max_discount: z.number().min(0).optional().nullable(),
+  max_discount: z.number().min(1, 'Mức giảm tối đa phải lớn hơn 0').optional().nullable(),
   usage_limit: z.number().int().min(1, 'Giới hạn sử dụng tối thiểu 1'),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_date: z.string().refine(parseDateOnly, 'Ngày bắt đầu không hợp lệ'),
+  end_date: z.string().refine(parseDateOnly, 'Ngày kết thúc không hợp lệ'),
   is_active: z.boolean().optional().default(true),
 }).superRefine((data, ctx) => {
   if (data.discount_type === 'PERCENTAGE' && data.discount_value > 100) {
@@ -240,11 +246,18 @@ const createVoucherSchema = z.object({
       message: 'Phần trăm giảm không được vượt quá 100%',
     });
   }
-  if (new Date(data.start_date) >= new Date(data.end_date)) {
+  if (data.end_date < data.start_date) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['end_date'],
-      message: 'Ngày kết thúc phải sau ngày bắt đầu',
+      message: 'Ngày kết thúc không được trước ngày bắt đầu',
+    });
+  }
+  if (data.discount_type === 'FIXED' && data.max_discount !== null && data.max_discount !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['max_discount'],
+      message: 'Voucher giảm tiền cố định không sử dụng mức giảm tối đa',
     });
   }
 });

@@ -16,11 +16,14 @@
     "axios": "^1.18.1",
     "dayjs": "^1.11.20",
     "dompurify": "^3.4.12",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "react": "^19.2.6",
     "react-is": "^19.2.7",
     "react-quill-new": "3.7.0",
     "react-router-dom": "^7.15.1",
-    "recharts": "^3.8.1"
+    "recharts": "^3.8.1",
+    "write-excel-file": "^2.3.10"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.29.7",

@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import {
   Table, Button, Typography, Space, Modal, Form, Input, InputNumber,
-  DatePicker, Switch, message, Tag, Select, Card, Row, Col, Statistic,
-  Tooltip, Badge, Avatar, Divider, Empty, Spin
+  DatePicker, Switch, message, Tag, Select, Card, Row, Col,
+  Tooltip, Avatar, Divider, Empty, Spin, Alert
 } from 'antd';
 import {
   EditOutlined, PlusOutlined, PoweroffOutlined, HistoryOutlined,
-  GiftOutlined, CheckCircleOutlined, CloseCircleOutlined, UserOutlined
+  GiftOutlined, UserOutlined
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/adminApi';
-import { formatVND, formatDateTime, formatDate } from '../../utils/helpers';
+import { formatVND, formatDateTime } from '../../utils/helpers';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
@@ -19,9 +19,12 @@ const { Option } = Select;
 export default function AdminVouchersPage() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editingVoucher, setEditingVoucher] = useState(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [form] = Form.useForm();
   const discountType = Form.useWatch('discount_type', form);
+  const selectedStartDate = Form.useWatch('start_date', form);
+  const selectedIsActive = Form.useWatch('is_active', form);
 
   // Usage history modal
   const [usageModalVisible, setUsageModalVisible] = useState(false);
@@ -44,13 +47,20 @@ export default function AdminVouchersPage() {
 
   // Stats
   const totalVouchers = vouchers.length;
-  const activeVouchers = vouchers.filter(v => v.is_active).length;
+  const today = dayjs().startOf('day');
+  const activeVouchers = vouchers.filter(v => (
+    v.is_active
+    && !today.isBefore(dayjs(v.start_date).startOf('day'))
+    && !today.isAfter(dayjs(v.end_date).startOf('day'))
+    && Number(v.used_count || 0) < Number(v.usage_limit || 0)
+  )).length;
   const totalUsed = vouchers.reduce((sum, v) => sum + (v.used_count || 0), 0);
-  const expiredVouchers = vouchers.filter(v => dayjs().isAfter(dayjs(v.end_date))).length;
+  const expiredVouchers = vouchers.filter(v => today.isAfter(dayjs(v.end_date).startOf('day'))).length;
 
   const handleOpenModal = (voucher = null) => {
     if (voucher) {
       setEditingId(voucher.id);
+      setEditingVoucher(voucher);
       form.setFieldsValue({
         code: voucher.code,
         discount_type: voucher.discount_type,
@@ -64,11 +74,15 @@ export default function AdminVouchersPage() {
       });
     } else {
       setEditingId(null);
+      setEditingVoucher(null);
       form.resetFields();
       form.setFieldsValue({
         discount_type: 'PERCENTAGE',
         min_order_amount: 0,
         max_discount: null,
+        usage_limit: 100,
+        start_date: dayjs().startOf('day'),
+        end_date: dayjs().add(7, 'day').startOf('day'),
         is_active: true,
       });
     }
@@ -94,12 +108,40 @@ export default function AdminVouchersPage() {
         message.success('Tạo voucher thành công');
       }
       setIsModalVisible(false);
+      setEditingId(null);
+      setEditingVoucher(null);
       refetch();
     } catch (err) {
       message.error(err.message || 'Lỗi khi lưu voucher');
     } finally {
       setLoadingAction(false);
     }
+  };
+
+  const handleCloseModal = () => {
+    setIsModalVisible(false);
+    setEditingId(null);
+    setEditingVoucher(null);
+    form.resetFields();
+  };
+
+  const voucherHasUsage = Number(editingVoucher?.used_count || 0) > 0;
+  const minimumUsageLimit = Math.max(
+    1,
+    Number(editingVoucher?.used_count || 0) + (selectedIsActive && editingVoucher ? 1 : 0),
+  );
+
+  const disableStartDate = (date) => {
+    if (!date) return false;
+    if (!date.startOf('day').isBefore(today)) return false;
+    return !(editingVoucher?.start_date && date.isSame(dayjs(editingVoucher.start_date), 'day'));
+  };
+
+  const disableEndDate = (date) => {
+    if (!date) return false;
+    const selectedDate = selectedStartDate?.startOf('day');
+    const earliestDate = selectedDate?.isAfter(today) ? selectedDate : today;
+    return date.startOf('day').isBefore(earliestDate);
   };
 
   const toggleVoucher = async (voucher) => {
@@ -131,10 +173,10 @@ export default function AdminVouchersPage() {
   };
 
   const getVoucherStatus = (record) => {
-    const now = dayjs();
+    const now = dayjs().startOf('day');
     if (!record.is_active) return { label: 'Đã tắt', color: 'default' };
-    if (now.isAfter(dayjs(record.end_date))) return { label: 'Hết hạn', color: 'error' };
-    if (now.isBefore(dayjs(record.start_date))) return { label: 'Chưa bắt đầu', color: 'processing' };
+    if (now.isAfter(dayjs(record.end_date).startOf('day'))) return { label: 'Hết hạn', color: 'error' };
+    if (now.isBefore(dayjs(record.start_date).startOf('day'))) return { label: 'Chưa bắt đầu', color: 'processing' };
     if (record.used_count >= record.usage_limit) return { label: 'Đã hết lượt', color: 'warning' };
     return { label: 'Đang hoạt động', color: 'success' };
   };
@@ -352,19 +394,36 @@ export default function AdminVouchersPage() {
           </Space>
         }
         open={isModalVisible}
-        onCancel={() => setIsModalVisible(false)}
+        onCancel={handleCloseModal}
         footer={null}
         destroyOnHidden
         width={520}
       >
         <Divider style={{ margin: '12px 0' }} />
+        {voucherHasUsage && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={`Voucher đã có ${editingVoucher.used_count} lượt sử dụng`}
+            description="Để giữ đúng lịch sử giảm giá, bạn chỉ có thể gia hạn ngày kết thúc, tăng giới hạn lượt dùng hoặc thay đổi trạng thái."
+          />
+        )}
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="code" label="Mã voucher" rules={[{ required: true, message: 'Vui lòng nhập mã voucher' }]}>
-            <Input style={{ textTransform: 'uppercase', fontWeight: 600, letterSpacing: 1 }} placeholder="VD: SUMMER30" />
+          <Form.Item
+            name="code"
+            label="Mã voucher"
+            rules={[
+              { required: true, message: 'Vui lòng nhập mã voucher' },
+              { min: 3, max: 50, message: 'Mã voucher phải từ 3 đến 50 ký tự' },
+              { pattern: /^[A-Za-z0-9_-]+$/, message: 'Chỉ dùng chữ, số, dấu gạch ngang hoặc gạch dưới' },
+            ]}
+          >
+            <Input disabled={voucherHasUsage} style={{ textTransform: 'uppercase', fontWeight: 600, letterSpacing: 1 }} placeholder="VD: SUMMER30" />
           </Form.Item>
 
           <Form.Item name="discount_type" label="Loại giảm giá" rules={[{ required: true }]}>
-            <Select>
+            <Select disabled={voucherHasUsage}>
               <Option value="PERCENTAGE">Giảm theo phần trăm (%)</Option>
               <Option value="FIXED">Giảm số tiền cố định (₫)</Option>
             </Select>
@@ -385,6 +444,7 @@ export default function AdminVouchersPage() {
               ]}
             >
               <InputNumber
+                disabled={voucherHasUsage}
                 min={1}
                 max={discountType === 'PERCENTAGE' ? 100 : undefined}
                 step={discountType === 'FIXED' ? 10000 : 1}
@@ -395,25 +455,51 @@ export default function AdminVouchersPage() {
 
             {discountType === 'PERCENTAGE' && (
               <Form.Item name="max_discount" label="Giảm tối đa (₫)">
-                <InputNumber min={0} step={10000} style={{ width: 200 }} />
+                <InputNumber disabled={voucherHasUsage} min={1} step={10000} style={{ width: 200 }} />
               </Form.Item>
             )}
           </Space>
 
           <Form.Item name="min_order_amount" label="Giá trị đơn tối thiểu (₫)">
-            <InputNumber min={0} step={10000} style={{ width: '100%' }} />
+            <InputNumber disabled={voucherHasUsage} min={0} step={10000} style={{ width: '100%' }} />
           </Form.Item>
 
-          <Form.Item name="usage_limit" label="Tổng lượt sử dụng" rules={[{ required: true, message: 'Vui lòng nhập số lượt' }]}>
-            <InputNumber min={1} style={{ width: '100%' }} />
+          <Form.Item
+            name="usage_limit"
+            label="Tổng lượt sử dụng"
+            extra={editingVoucher ? `Đã sử dụng ${editingVoucher.used_count || 0} lượt` : null}
+            rules={[
+              { required: true, message: 'Vui lòng nhập số lượt' },
+              { type: 'number', min: minimumUsageLimit, message: `Tối thiểu ${minimumUsageLimit} lượt với trạng thái hiện tại` },
+            ]}
+          >
+            <InputNumber min={minimumUsageLimit} precision={0} style={{ width: '100%' }} />
           </Form.Item>
 
           <Space style={{ display: 'flex' }}>
-            <Form.Item name="start_date" label="Ngày bắt đầu" rules={[{ required: true, message: 'Chọn ngày bắt đầu' }]}>
-              <DatePicker style={{ width: 200 }} format="DD/MM/YYYY" />
+            <Form.Item
+              name="start_date"
+              label="Ngày bắt đầu"
+              rules={[{ required: true, message: 'Chọn ngày bắt đầu' }]}
+            >
+              <DatePicker disabled={voucherHasUsage} disabledDate={disableStartDate} style={{ width: 200 }} format="DD/MM/YYYY" />
             </Form.Item>
-            <Form.Item name="end_date" label="Ngày kết thúc" rules={[{ required: true, message: 'Chọn ngày kết thúc' }]}>
-              <DatePicker style={{ width: 200 }} format="DD/MM/YYYY" />
+            <Form.Item
+              name="end_date"
+              label="Ngày kết thúc"
+              dependencies={['start_date']}
+              rules={[
+                { required: true, message: 'Chọn ngày kết thúc' },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    const start = getFieldValue('start_date');
+                    if (!value || !start || !value.startOf('day').isBefore(start.startOf('day'))) return Promise.resolve();
+                    return Promise.reject(new Error('Ngày kết thúc không được trước ngày bắt đầu'));
+                  },
+                }),
+              ]}
+            >
+              <DatePicker disabledDate={disableEndDate} style={{ width: 200 }} format="DD/MM/YYYY" />
             </Form.Item>
           </Space>
 
